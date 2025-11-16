@@ -1,7 +1,7 @@
 # PROYECTO: MINI-PIPELINE DE LIBROS
 
 **Alumno:** Antonio Ferrer Martínez  
-**Asignatura:** Inteligencia Artificial y Big Data  
+**Asignatura:** IA_y_BD - SISTEMAS BIG DATA - 25/26  
 **Curso:** 2025-2026  
 **Fecha de entrega:** 17 de noviembre de 2025
 
@@ -417,89 +417,6 @@ cat docs/quality_metrics.json
 # Leer documentación del esquema
 cat docs/schema.md
 ```
-
----
-
-## CUMPLIMIENTO DE RÚBRICA
-
-### Criterio 1: Estructura del repositorio (1.0 pt)
-✅ **EXCELENTE**
-- Estructura exacta `books-pipeline/` con todas las carpetas requeridas
-- Archivos nombrados según especificación
-- README.md completo y detallado
-
-### Criterio 2: Scraping Goodreads (1.0 pt)
-✅ **EXCELENTE**
-- 15 libros extraídos (supera mínimo de 12-15)
-- Todos los campos clave presentes
-- JSON válido y bien formado
-- Metadata completa en README
-
-### Criterio 3: Metadatos de landing y ética (1.0 pt)
-✅ **EXCELENTE**
-- Selectores CSS documentados
-- User-Agent especificado
-- Fecha y número de registros anotados
-- Separador y codificación CSV documentados
-- Pausas de 1.0s implementadas
-
-### Criterio 4: Enriquecimiento Google Books (1.0 pt)
-✅ **EXCELENTE**
-- Búsqueda prioritaria por ISBN (preferente)
-- CSV UTF-8 con cabecera
-- Campos completos y consistentes
-- Manejo de casos sin ISBN
-
-### Criterio 5: Modelo canónico y mapeo (1.0 pt)
-✅ **EXCELENTE**
-- Esquema claro con ID isbn13 preferente
-- Clave provisional documentada (hash)
-- Mapeo completo de campos documentado
-- Campos en snake_case consistente
-
-### Criterio 6: Normalización semántica (1.0 pt)
-✅ **EXCELENTE**
-- ISBN-13 validado con algoritmo checksum
-- Fechas en ISO-8601 con precisión documentada
-- Idioma en BCP-47
-- Moneda en ISO-4217
-- Precios en decimal con punto
-
-### Criterio 7: Integración, deduplicación y provenance (1.0 pt)
-✅ **EXCELENTE**
-- Resolución por isbn13 como clave primaria
-- Reglas de supervivencia documentadas:
-  * Título más completo
-  * Precio más reciente
-  * Unión de autores/categorías
-- Provenance registrado por campo
-- Fuente ganadora identificada
-
-### Criterio 8: Aserciones y métricas de calidad (1.0 pt)
-✅ **EXCELENTE**
-- Aserciones bloqueantes implementadas:
-  * Unicidad de book_id
-  * Completitud de título ≥90%
-  * Rangos válidos en campos numéricos
-- quality_metrics.json completo y claro
-- Métricas por fuente
-- Warnings y errors registrados
-
-### Criterio 9: Artefactos estándar (1.0 pt)
-✅ **EXCELENTE**
-- dim_book.parquet correcto (18 columnas + timestamp)
-- book_source_detail.parquet con provenance
-- schema.md exhaustivo y bien estructurado
-- README consistente con implementación
-
-### Criterio 10: Entrega (1.0 pt)
-✅ **EXCELENTE**
-- PDF consolidado (este documento)
-- Nombre correcto: `ferrer_martinez_antonio_SBD25_Tarea.pdf`
-- Enlace al repositorio incluido
-
-**PUNTUACIÓN TOTAL: 10.0 / 10.0**
-
 ---
 
 ## ENLACE AL REPOSITORIO
