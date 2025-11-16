@@ -2,7 +2,8 @@
 
 **Proyecto:** Mini-pipeline de Extracción → Enriquecimiento → Integración  
 **Autor:** Antonio Ferrer Martínez  
-**Curso:** Inteligencia Artificial y Big Data  
+**Asignatura:** IA_y_BD - SISTEMAS BIG DATA - 25/26  
+**Centro:** CIFP Carlos III  
 **Fecha:** Noviembre 2025
 
 ## Descripción
@@ -305,8 +306,8 @@ Documentación del modelo de datos
 ## Autor
 
 **Antonio Ferrer Martínez**  
-Estudiante de Inteligencia Artificial y Ciberseguridad  
-SEAS Estudios Superiores - EOI
+Estudiante de IA_y_BD - SISTEMAS BIG DATA - 25/26  
+CIFP Carlos III
 
 ## Licencia
 
