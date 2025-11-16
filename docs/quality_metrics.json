@@ -1,0 +1,35 @@
+{
+  "pipeline_execution": {
+    "timestamp": "2025-11-16T19:22:41.609331",
+    "total_sources": 2,
+    "total_input_records": 20,
+    "total_output_records": 20
+  },
+  "source_breakdown": {
+    "goodreads_records": 10,
+    "googlebooks_records": 10
+  },
+  "quality_checks": {
+    "goodreads_completeness": {
+      "title": 100.0,
+      "author": 100.0,
+      "book_url": 100.0
+    },
+    "googlebooks_completeness": {
+      "title": 100.0,
+      "authors": 100.0
+    },
+    "normalization": {
+      "dates_valid_pct": {
+        "fecha_publicacion_iso": 100.0
+      },
+      "languages_valid_pct": 100.0,
+      "currencies_valid_pct": 100.0,
+      "isbn13_valid_pct": 100.0,
+      "isbn10_valid_pct": 100.0
+    },
+    "duplicates_found": 0
+  },
+  "warnings": [],
+  "errors": []
+}
