@@ -1,9 +1,9 @@
 {
-  "execution_date": "2025-11-20T18:06:06.500651",
+  "execution_date": "2025-11-20T18:45:39.179615",
   "pipeline_execution": {
     "status": "completed",
-    "duration_seconds": 0.09,
-    "timestamp": "2025-11-20T18:06:06.591831"
+    "duration_seconds": 0.55,
+    "timestamp": "2025-11-20T18:45:39.730204"
   },
   "source_breakdown": {
     "goodreads": {
@@ -12,58 +12,58 @@
       "records_with_rating": 15
     },
     "googlebooks": {
-      "total_records": 15,
-      "records_with_isbn": 15,
-      "records_with_price": 6
+      "total_records": 14,
+      "records_with_isbn": 14,
+      "records_with_price": 7
     }
   },
   "source_files": {
     "goodreads": {
-      "file": "..\\landing\\goodreads_books.json",
+      "file": "D:\\Proyecto_Biblioteca\\books-pipeline\\books-pipeline\\landing\\goodreads_books.json",
       "records": 15,
-      "load_date": "2025-11-20T18:06:06.504421"
+      "load_date": "2025-11-20T18:45:39.210721"
     },
     "googlebooks": {
-      "file": "..\\landing\\googlebooks_books.csv",
-      "records": 15,
-      "load_date": "2025-11-20T18:06:06.510053"
+      "file": "D:\\Proyecto_Biblioteca\\books-pipeline\\books-pipeline\\landing\\googlebooks_books.csv",
+      "records": 14,
+      "load_date": "2025-11-20T18:45:39.246965"
     }
   },
   "record_counts": {
     "dim_book_total": 15,
-    "dim_book_with_isbn": 14,
-    "dim_book_with_price": 5,
+    "dim_book_with_isbn": 13,
+    "dim_book_with_price": 6,
     "dim_book_with_rating": 15,
-    "source_detail_total": 30,
+    "source_detail_total": 29,
     "source_detail_goodreads": 15,
-    "source_detail_googlebooks": 15
+    "source_detail_googlebooks": 14
   },
   "quality_checks": {
     "total_books": 15,
-    "books_with_complete_metadata": 14,
+    "books_with_complete_metadata": 13,
     "books_with_rating": 15,
-    "books_with_price": 5
+    "books_with_price": 6
   },
   "data_quality": {
     "percent_valid_titles": 100.0,
-    "percent_valid_isbns": 93.33,
+    "percent_valid_isbns": 86.67,
     "percent_with_rating": 100.0,
-    "percent_with_price": 33.33,
-    "percent_with_googlebooks_data": 93.33,
-    "percent_with_year": 93.33
+    "percent_with_price": 40.0,
+    "percent_with_googlebooks_data": 86.67,
+    "percent_with_year": 86.67
   },
   "deduplication": {
     "matching": {
       "total_books": 15,
-      "matched": 14,
-      "unmatched": 1,
-      "match_rate": "93.3%"
+      "matched": 13,
+      "unmatched": 2,
+      "match_rate": "86.7%"
     }
   },
   "execution_summary": {
     "status": "success",
-    "start_time": "2025-11-20T18:06:06.500661",
-    "end_time": "2025-11-20T18:06:06.591831",
-    "execution_time_seconds": 0.09
+    "start_time": "2025-11-20T18:45:39.179705",
+    "end_time": "2025-11-20T18:45:39.730204",
+    "execution_time_seconds": 0.55
   }
 }

@@ -1,10 +1,7 @@
 """
 EJERCICIO 3: Integración y estandarización → Parquet (standard/)
 
-VERSIÓN FINAL - TODAS LAS COLUMNAS REQUERIDAS
-- Emparejamiento por título normalizado
-- Todas las columnas esperadas por el verificador
-- Métricas completas
+VERSIÓN MEJORADA - Compatible con ejecución desde raíz o src/
 """
 
 import json
@@ -14,15 +11,26 @@ from pathlib import Path
 from datetime import datetime
 import hashlib
 import re
+import os
 
 
 class DataIntegrator:
     """Integra datos de Goodreads y Google Books en un modelo canónico"""
     
-    def __init__(self, landing_dir="../landing", standard_dir="../standard", docs_dir="../docs"):
-        self.landing_dir = Path(landing_dir)
-        self.standard_dir = Path(standard_dir)
-        self.docs_dir = Path(docs_dir)
+    def __init__(self, landing_dir=None, standard_dir=None, docs_dir=None):
+        # Detectar directorio base automáticamente
+        current_dir = Path.cwd()
+        
+        # Si estamos en src/, subir un nivel
+        if current_dir.name == 'src':
+            base_dir = current_dir.parent
+        else:
+            base_dir = current_dir
+        
+        # Usar directorios proporcionados o calcular relativos al base_dir
+        self.landing_dir = Path(landing_dir) if landing_dir else base_dir / "landing"
+        self.standard_dir = Path(standard_dir) if standard_dir else base_dir / "standard"
+        self.docs_dir = Path(docs_dir) if docs_dir else base_dir / "docs"
         
         # Crear directorios si no existen
         self.standard_dir.mkdir(exist_ok=True)
@@ -52,9 +60,9 @@ class DataIntegrator:
             return ""
         
         title = str(title).lower()
-        title = title.split(':')[0]  # Eliminar subtítulo
-        title = re.sub(r'[^a-z\s]', '', title)  # Solo letras y espacios
-        title = ' '.join(title.split())  # Eliminar espacios múltiples
+        title = title.split(':')[0]
+        title = re.sub(r'[^a-z\s]', '', title)
+        title = ' '.join(title.split())
         
         return title.strip()
     
@@ -64,8 +72,6 @@ class DataIntegrator:
             return None
         
         date_str = str(date_str)
-        
-        # Buscar patrón de año (4 dígitos)
         match = re.search(r'\b(19|20)\d{2}\b', date_str)
         if match:
             return int(match.group())
@@ -78,16 +84,16 @@ class DataIntegrator:
         
         print(f"Cargando: {json_path}")
         
+        if not json_path.exists():
+            raise FileNotFoundError(f"No se encuentra el archivo: {json_path}")
+        
         with open(json_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
         books = data.get('books', [])
         self.goodreads_df = pd.DataFrame(books)
         
-        # Añadir índice de origen para referencia
         self.goodreads_df['source_index'] = range(len(self.goodreads_df))
-        
-        # Añadir título normalizado para matching
         self.goodreads_df['titulo_normalizado'] = self.goodreads_df['title'].apply(
             self.normalize_title_for_matching
         )
@@ -114,12 +120,12 @@ class DataIntegrator:
         
         print(f"Cargando: {csv_path}")
         
+        if not csv_path.exists():
+            raise FileNotFoundError(f"No se encuentra el archivo: {csv_path}")
+        
         self.googlebooks_df = pd.read_csv(csv_path)
         
-        # Añadir índice de origen para referencia
         self.googlebooks_df['source_index'] = range(len(self.googlebooks_df))
-        
-        # Añadir título normalizado para matching
         self.googlebooks_df['titulo_normalizado'] = self.googlebooks_df['title'].apply(
             self.normalize_title_for_matching
         )
@@ -149,7 +155,6 @@ class DataIntegrator:
         for idx, gr_row in self.goodreads_df.iterrows():
             gr_title_norm = gr_row['titulo_normalizado']
             
-            # Buscar coincidencia exacta en Google Books
             gb_match = self.googlebooks_df[
                 self.googlebooks_df['titulo_normalizado'] == gr_title_norm
             ]
@@ -196,10 +201,8 @@ class DataIntegrator:
             gr_idx = match['goodreads_index']
             gb_idx = match['googlebooks_index']
             
-            # Datos de Goodreads (siempre presentes)
             gr_book = self.goodreads_df.iloc[gr_idx]
             
-            # Datos de Google Books (pueden no existir)
             if pd.notna(gb_idx):
                 gb_book = self.googlebooks_df.iloc[int(gb_idx)]
                 has_gb_data = True
@@ -207,9 +210,8 @@ class DataIntegrator:
                 gb_book = None
                 has_gb_data = False
             
-            # SUPERVIVENCIA: Combinar datos de ambas fuentes
+            # SUPERVIVENCIA: Combinar datos
             
-            # ISBN (preferencia a Google Books si existe)
             if has_gb_data and pd.notna(gb_book.get('isbn13')):
                 isbn13 = str(gb_book['isbn13'])
                 isbn_source = 'googlebooks'
@@ -227,7 +229,6 @@ class DataIntegrator:
             else:
                 isbn10 = None
             
-            # Título (preferencia al más completo)
             gr_title = gr_book['title']
             gb_title = gb_book['title'] if has_gb_data else None
             
@@ -238,7 +239,6 @@ class DataIntegrator:
                 titulo = gr_title
                 titulo_source = 'goodreads'
             
-            # Autor (unión de ambas fuentes)
             gr_author = gr_book['author']
             gb_authors = gb_book['authors'] if has_gb_data and pd.notna(gb_book.get('authors')) else None
             
@@ -252,21 +252,17 @@ class DataIntegrator:
                 autores_completo = [gr_author] if gr_author else []
                 autor_source = 'goodreads'
             
-            # Rating (solo de Goodreads)
             rating_promedio = gr_book.get('rating')
             numero_ratings = gr_book.get('ratings_count')
             rating_source = 'goodreads' if pd.notna(rating_promedio) else None
             
-            # Metadatos (preferencia a Google Books)
             editorial = gb_book.get('publisher') if has_gb_data else None
             fecha_publicacion = gb_book.get('pub_date') if has_gb_data else None
             anio_publicacion = self.extract_year_from_date(fecha_publicacion) if fecha_publicacion else None
             idioma = gb_book.get('language') if has_gb_data else None
             
-            # Categorías (de Google Books, convertir a lista)
             categorias_raw = gb_book.get('categories') if has_gb_data else None
             if pd.notna(categorias_raw):
-                # Convertir a lista si es string
                 if isinstance(categorias_raw, str):
                     categoria = [c.strip() for c in categorias_raw.split(',')]
                 else:
@@ -274,16 +270,13 @@ class DataIntegrator:
             else:
                 categoria = []
             
-            # Precio (solo de Google Books)
             precio = gb_book.get('price_amount') if has_gb_data else None
             moneda = gb_book.get('price_currency') if has_gb_data else None
             precio_source = 'googlebooks' if pd.notna(precio) else None
             
-            # URLs
             goodreads_url = gr_book.get('book_url')
             gb_id = gb_book.get('gb_id') if has_gb_data else None
             
-            # Crear ID canónico
             if isbn13:
                 book_id = f"ISBN13:{isbn13}"
             elif isbn10:
@@ -292,7 +285,6 @@ class DataIntegrator:
                 hash_input = f"{titulo}|{autor_principal}|{editorial or ''}"
                 book_id = f"HASH:{hashlib.md5(hash_input.encode()).hexdigest()[:12]}"
             
-            # Determinar fuente ganadora (la que aportó más datos)
             fuentes_score = {
                 'goodreads': (1 if rating_promedio else 0) + (1 if gr_author else 0),
                 'googlebooks': (1 if isbn13 else 0) + (1 if editorial else 0) + (1 if precio else 0)
@@ -340,7 +332,7 @@ class DataIntegrator:
         return unified_df
     
     def create_dim_book(self, unified_df):
-        """Crea la tabla dimensional dim_book con TODAS las columnas requeridas"""
+        """Crea la tabla dimensional dim_book"""
         print("\nCreando dim_book.parquet...")
         
         self.dim_book = unified_df[[
@@ -367,7 +359,6 @@ class DataIntegrator:
             'ts_ultima_actualizacion'
         ]].copy()
         
-        # Convertir listas a strings para Parquet
         self.dim_book['autores'] = self.dim_book['autores'].apply(
             lambda x: ','.join(x) if isinstance(x, list) else str(x) if pd.notna(x) else None
         )
@@ -376,7 +367,6 @@ class DataIntegrator:
             lambda x: ','.join(x) if isinstance(x, list) and len(x) > 0 else None
         )
         
-        # Guardar
         output_path = self.standard_dir / "dim_book.parquet"
         self.dim_book.to_parquet(output_path, index=False)
         
@@ -396,7 +386,6 @@ class DataIntegrator:
         
         detail_records = []
         
-        # Registros de Goodreads
         for idx, gr_row in self.goodreads_df.iterrows():
             match = matches_df[matches_df['goodreads_index'] == gr_row['source_index']]
             
@@ -432,7 +421,6 @@ class DataIntegrator:
                 'ts_ingesta': datetime.now().isoformat()
             })
         
-        # Registros de Google Books
         for idx, gb_row in self.googlebooks_df.iterrows():
             match = matches_df[matches_df['googlebooks_index'] == gb_row['source_index']]
             
@@ -468,7 +456,6 @@ class DataIntegrator:
         
         self.book_source_detail = pd.DataFrame(detail_records)
         
-        # Guardar
         output_path = self.standard_dir / "book_source_detail.parquet"
         self.book_source_detail.to_parquet(output_path, index=False)
         
@@ -486,7 +473,7 @@ class DataIntegrator:
         return self.book_source_detail
     
     def generate_quality_metrics(self):
-        """Genera métricas de calidad COMPLETAS"""
+        """Genera métricas de calidad"""
         print("\nGenerando métricas de calidad...")
         
         if self.dim_book is not None:
@@ -512,7 +499,6 @@ class DataIntegrator:
                 'books_with_price': int(self.dim_book['precio'].notna().sum())
             }
         
-        # Guardar métricas
         metrics_path = self.docs_dir / "quality_metrics.json"
         with open(metrics_path, 'w', encoding='utf-8') as f:
             json.dump(self.metrics, f, indent=2, ensure_ascii=False)
@@ -530,23 +516,13 @@ class DataIntegrator:
         print("="*80)
         
         try:
-            # 1. Cargar datos
             self.load_goodreads_data()
             self.load_googlebooks_data()
             
-            # 2. Emparejar por título
             matches_df = self.match_books_by_title()
-            
-            # 3. Crear registros unificados
             unified_df = self.create_unified_books(matches_df)
-            
-            # 4. Crear dim_book
             self.create_dim_book(unified_df)
-            
-            # 5. Crear book_source_detail
             self.create_book_source_detail(matches_df)
-            
-            # 6. Generar métricas
             self.generate_quality_metrics()
             
             end_time = datetime.now()
@@ -565,7 +541,6 @@ class DataIntegrator:
                 'timestamp': end_time.isoformat()
             }
             
-            # Actualizar métricas
             metrics_path = self.docs_dir / "quality_metrics.json"
             with open(metrics_path, 'w', encoding='utf-8') as f:
                 json.dump(self.metrics, f, indent=2, ensure_ascii=False)
@@ -596,7 +571,6 @@ class DataIntegrator:
                 'error': str(e)
             }
             
-            # Guardar métricas con error
             metrics_path = self.docs_dir / "quality_metrics.json"
             with open(metrics_path, 'w', encoding='utf-8') as f:
                 json.dump(self.metrics, f, indent=2, ensure_ascii=False)
