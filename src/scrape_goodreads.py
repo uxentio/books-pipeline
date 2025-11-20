@@ -9,9 +9,10 @@ OBJETIVO:
 
 FUNCIONAMIENTO:
     1. Busca libros en Goodreads con un término (ej: "data science")
-    2. Accede a la página de cada libro individual
-    3. Extrae: título, autor, rating, número de valoraciones, URL, ISBN
-    4. Guarda todo en un archivo JSON con metadata del scraping
+    2. Scrapea múltiples páginas de resultados si es necesario
+    3. Accede a la página de cada libro individual
+    4. Extrae: título, autor, rating, número de valoraciones, URL, ISBN
+    5. Guarda todo en un archivo JSON con metadata del scraping
 
 TECNOLOGÍAS:
     - requests: para hacer peticiones HTTP a Goodreads
@@ -45,7 +46,7 @@ class GoodreadsScraper:
     Scraper para obtener información de libros desde Goodreads
     
     Esta clase se encarga de:
-    1. Buscar libros en Goodreads
+    1. Buscar libros en Goodreads (múltiples páginas si es necesario)
     2. Extraer información de cada libro
     3. Guardar los resultados en JSON
     """
@@ -99,16 +100,18 @@ class GoodreadsScraper:
                 'book_url': '.BookCard__title a[href]',     # Para extraer URL del libro
                 'isbn': 'meta[property="books:isbn"]'       # Para extraer ISBN
             },
-            'total_books_scraped': 0  # Contador (se actualiza al final)
+            'total_books_scraped': 0,  # Contador (se actualiza al final)
+            'pages_scraped': 0         # Número de páginas scrapeadas
         }
     
     #═════════════════════════════════════════════════════════════════════════
-    # MÉTODO PRINCIPAL: BUSCAR LIBROS
+    # MÉTODO PRINCIPAL: BUSCAR LIBROS CON PAGINACIÓN
     #═════════════════════════════════════════════════════════════════════════
     
     def search_books(self, query, max_books=15):
         """
         Busca libros en Goodreads y extrae información de cada uno
+        Scrapea múltiples páginas si es necesario para obtener max_books
         
         PARÁMETROS:
             query (str): Término de búsqueda (ej: "data science")
@@ -116,7 +119,7 @@ class GoodreadsScraper:
         
         PROCESO:
             1. Construye la URL de búsqueda
-            2. Hace una petición a Goodreads
+            2. Scrapea páginas hasta obtener max_books libros
             3. Extrae enlaces a páginas individuales de libros
             4. Visita cada página de libro y extrae datos
             5. Hace pausas entre peticiones (ética de scraping)
@@ -130,90 +133,152 @@ class GoodreadsScraper:
         #─────────────────────────────────────────────────────────────────────
         self.metadata['search_term'] = query  # Guardar término para metadata
         
-        # Construir URL de búsqueda (espacios se reemplazan por +)
-        search_url = f"{self.base_url}/search?q={query.replace(' ', '+')}"
-        self.metadata['search_urls'].append(search_url)  # Guardar URL visitada
-        
         print(f"Buscando libros sobre '{query}' en Goodreads...")
-        print(f"URL: {search_url}")
+        print(f"Objetivo: {max_books} libros")
+        
+        #─────────────────────────────────────────────────────────────────────
+        # PASO 2: Scrapear múltiples páginas si es necesario
+        #─────────────────────────────────────────────────────────────────────
+        page = 1
+        max_pages = 3  # Máximo 3 páginas para evitar sobrecarga
         
         try:
-            #─────────────────────────────────────────────────────────────────
-            # PASO 2: Hacer la petición HTTP a Goodreads
-            #─────────────────────────────────────────────────────────────────
-            response = requests.get(
-                search_url, 
-                headers=self.headers,  # Enviar nuestros headers
-                timeout=10             # Timeout de 10 segundos
-            )
-            response.raise_for_status()  # Lanzar error si status code no es 200
-            
-            #─────────────────────────────────────────────────────────────────
-            # PASO 3: Parsear el HTML con BeautifulSoup
-            #─────────────────────────────────────────────────────────────────
-            soup = BeautifulSoup(response.content, 'lxml')
-            
-            #─────────────────────────────────────────────────────────────────
-            # PASO 4: Buscar enlaces a páginas de libros
-            #─────────────────────────────────────────────────────────────────
-            # Intentar con el selector principal
-            book_links = soup.select('a.bookTitle')[:max_books]
-            
-            # Si no encuentra nada, intentar método alternativo
-            if not book_links:
-                print("⚠ No se encontraron libros con los selectores actuales")
-                print("Intentando método alternativo...")
-                book_links = soup.find_all('a', {'class': 'bookTitle'})[:max_books]
-            
-            print(f"Se encontraron {len(book_links)} libros para procesar")
-            
-            #─────────────────────────────────────────────────────────────────
-            # PASO 5: Procesar cada libro individualmente
-            #─────────────────────────────────────────────────────────────────
-            for idx, link in enumerate(book_links, 1):
-                # Construir URL completa del libro
-                book_url = self.base_url + link.get('href', '')
-                print(f"\nProcesando libro {idx}/{len(book_links)}: {book_url}")
+            while len(self.books) < max_books and page <= max_pages:
+                # Construir URL de búsqueda con paginación
+                search_url = f"{self.base_url}/search?q={query.replace(' ', '+')}&page={page}"
+                self.metadata['search_urls'].append(search_url)  # Guardar URL visitada
                 
-                # Extraer datos del libro (método separado abajo)
-                book_data = self._scrape_book_page(book_url)
-                
-                # Si se extrajo algo, añadirlo a la lista
-                if book_data:
-                    self.books.append(book_data)
-                    print(f"✓ Libro extraído: {book_data.get('title', 'Sin título')}")
+                print(f"\n{'='*60}")
+                print(f"Scrapeando página {page} de resultados")
+                print(f"{'='*60}")
+                print(f"URL: {search_url}")
                 
                 #─────────────────────────────────────────────────────────────
-                # PAUSA ÉTICA: esperar 1 segundo antes de la siguiente petición
-                # Esto evita saturar el servidor de Goodreads
+                # PASO 3: Hacer la petición HTTP a Goodreads
                 #─────────────────────────────────────────────────────────────
-                time.sleep(1.0)
+                response = requests.get(
+                    search_url, 
+                    headers=self.headers,  # Enviar nuestros headers
+                    timeout=10             # Timeout de 10 segundos
+                )
+                response.raise_for_status()  # Lanzar error si status code no es 200
                 
-                # Parar si ya tenemos suficientes libros
+                #─────────────────────────────────────────────────────────────
+                # PASO 4: Parsear el HTML con BeautifulSoup
+                #─────────────────────────────────────────────────────────────
+                soup = BeautifulSoup(response.content, 'lxml')
+                
+                #─────────────────────────────────────────────────────────────
+                # PASO 5: Buscar enlaces a páginas de libros
+                #─────────────────────────────────────────────────────────────
+                # Intentar con el selector principal
+                book_links = soup.select('a.bookTitle')
+                
+                # Si no encuentra nada, intentar método alternativo
+                if not book_links:
+                    print("⚠ No se encontraron libros con los selectores actuales")
+                    print("Intentando método alternativo...")
+                    book_links = soup.find_all('a', {'class': 'bookTitle'})
+                
+                # Si esta página no tiene resultados, terminar
+                if not book_links:
+                    print(f"No hay más resultados en la página {page}")
+                    break
+                
+                print(f"Se encontraron {len(book_links)} libros en la página {page}")
+                
+                #─────────────────────────────────────────────────────────────
+                # PASO 6: Procesar cada libro individualmente
+                #─────────────────────────────────────────────────────────────
+                for idx, link in enumerate(book_links, 1):
+                    # Si ya tenemos suficientes libros, parar
+                    if len(self.books) >= max_books:
+                        print(f"\n✓ Objetivo alcanzado: {max_books} libros")
+                        break
+                    
+                    # Construir URL completa del libro
+                    book_url = self.base_url + link.get('href', '')
+                    total_processed = len(self.books) + 1
+                    print(f"\nProcesando libro {total_processed}/{max_books}: {book_url}")
+                    
+                    # Extraer datos del libro (método separado abajo)
+                    book_data = self._scrape_book_page(book_url)
+                    
+                    # Si se extrajo algo, añadirlo a la lista
+                    if book_data:
+                        self.books.append(book_data)
+                        print(f"✓ Libro extraído: {book_data.get('title', 'Sin título')}")
+                    
+                    #─────────────────────────────────────────────────────────
+                    # PAUSA ÉTICA: esperar 1 segundo antes de la siguiente petición
+                    # Esto evita saturar el servidor de Goodreads
+                    #─────────────────────────────────────────────────────────
+                    time.sleep(1.0)
+                
+                # Si ya tenemos todos los libros, salir del bucle
                 if len(self.books) >= max_books:
                     break
+                
+                # Pausa más larga entre páginas (2 segundos)
+                if len(self.books) < max_books and page < max_pages:
+                    print(f"\nPausa entre páginas...")
+                    time.sleep(2.0)
+                
+                page += 1
             
             #─────────────────────────────────────────────────────────────────
-            # PASO 6: Actualizar metadata con el total extraído
+            # PASO 7: Actualizar metadata con el total extraído
             #─────────────────────────────────────────────────────────────────
             self.metadata['total_books_scraped'] = len(self.books)
-            print(f"\n✓ Scraping completado: {len(self.books)} libros extraídos")
+            self.metadata['pages_scraped'] = page - 1
+            
+            print(f"\n{'='*60}")
+            print(f"✓ Scraping completado exitosamente")
+            print(f"{'='*60}")
+            print(f"  - Libros extraídos: {len(self.books)}")
+            print(f"  - Páginas scrapeadas: {self.metadata['pages_scraped']}")
+            print(f"  - URLs visitadas: {len(self.metadata['search_urls'])}")
             
         except requests.RequestException as e:
             # Si hay algún error en la petición HTTP, mostrarlo
             print(f"✗ Error en la búsqueda: {e}")
             raise
     
+    #═════════════════════════════════════════════════════════════════════════
+    # MÉTODO AUXILIAR: SCRAPEAR PÁGINA INDIVIDUAL DE LIBRO
+    #═════════════════════════════════════════════════════════════════════════
+    
     def _scrape_book_page(self, url):
         """
         Extrae información detallada de una página individual de libro
+        
+        PARÁMETROS:
+            url (str): URL de la página del libro en Goodreads
+        
+        PROCESO:
+            1. Hace petición HTTP a la página del libro
+            2. Extrae: título, autor, rating, número de ratings, ISBNs
+            3. Maneja múltiples selectores (por si cambia el HTML)
+        
+        RETORNO:
+            dict: Diccionario con la información del libro
+            None: Si hubo algún error
         """
         try:
+            #─────────────────────────────────────────────────────────────────
+            # PASO 1: Hacer petición HTTP
+            #─────────────────────────────────────────────────────────────────
             response = requests.get(url, headers=self.headers, timeout=10)
             response.raise_for_status()
             
+            #─────────────────────────────────────────────────────────────────
+            # PASO 2: Parsear HTML
+            #─────────────────────────────────────────────────────────────────
             soup = BeautifulSoup(response.content, 'lxml')
             
+            #─────────────────────────────────────────────────────────────────
+            # PASO 3: Inicializar estructura de datos
+            #─────────────────────────────────────────────────────────────────
             book_data = {
                 'book_url': url,
                 'title': None,
@@ -224,21 +289,28 @@ class GoodreadsScraper:
                 'isbn13': None
             }
             
-            # Extraer título
+            #─────────────────────────────────────────────────────────────────
+            # PASO 4: Extraer título
+            # Intentar múltiples selectores (Goodreads cambia su HTML)
+            #─────────────────────────────────────────────────────────────────
             title_elem = soup.find('h1', {'class': 'Text__title1'})
             if not title_elem:
                 title_elem = soup.find('h1', {'data-testid': 'bookTitle'})
             if title_elem:
                 book_data['title'] = title_elem.get_text(strip=True)
             
-            # Extraer autor
+            #─────────────────────────────────────────────────────────────────
+            # PASO 5: Extraer autor
+            #─────────────────────────────────────────────────────────────────
             author_elem = soup.find('span', {'class': 'ContributorLink__name'})
             if not author_elem:
                 author_elem = soup.find('a', {'class': 'authorName'})
             if author_elem:
                 book_data['author'] = author_elem.get_text(strip=True)
             
-            # Extraer rating
+            #─────────────────────────────────────────────────────────────────
+            # PASO 6: Extraer rating (valoración promedio)
+            #─────────────────────────────────────────────────────────────────
             rating_elem = soup.find('div', {'class': 'RatingStatistics__rating'})
             if rating_elem:
                 rating_text = rating_elem.get_text(strip=True)
@@ -247,7 +319,9 @@ class GoodreadsScraper:
                 except:
                     book_data['rating'] = None
             
-            # Extraer número de ratings
+            #─────────────────────────────────────────────────────────────────
+            # PASO 7: Extraer número de ratings (cuántas valoraciones)
+            #─────────────────────────────────────────────────────────────────
             ratings_elem = soup.find('span', {'data-testid': 'ratingsCount'})
             if ratings_elem:
                 ratings_text = ratings_elem.get_text(strip=True)
@@ -256,7 +330,9 @@ class GoodreadsScraper:
                 if numbers:
                     book_data['ratings_count'] = int(numbers[0].replace(',', ''))
             
-            # Extraer ISBN del meta tag
+            #─────────────────────────────────────────────────────────────────
+            # PASO 8: Extraer ISBN del meta tag
+            #─────────────────────────────────────────────────────────────────
             isbn_meta = soup.find('meta', {'property': 'books:isbn'})
             if isbn_meta:
                 isbn = isbn_meta.get('content', '').strip()
@@ -265,7 +341,9 @@ class GoodreadsScraper:
                 elif len(isbn) == 10:
                     book_data['isbn10'] = isbn
             
-            # Buscar ISBN en el texto de la página
+            #─────────────────────────────────────────────────────────────────
+            # PASO 9: Buscar ISBN en el texto de la página (fallback)
+            #─────────────────────────────────────────────────────────────────
             if not book_data['isbn13'] and not book_data['isbn10']:
                 page_text = soup.get_text()
                 isbn_match = re.search(r'ISBN[:\s]*(\d{10}|\d{13})', page_text)
@@ -282,9 +360,22 @@ class GoodreadsScraper:
             print(f"  ⚠ Error al procesar {url}: {e}")
             return None
     
+    #═════════════════════════════════════════════════════════════════════════
+    # MÉTODO: GUARDAR EN JSON
+    #═════════════════════════════════════════════════════════════════════════
+    
     def save_to_json(self, output_path):
         """
         Guarda los libros y metadata en formato JSON
+        
+        PARÁMETROS:
+            output_path (str): Ruta donde guardar el archivo JSON
+        
+        FORMATO DE SALIDA:
+            {
+                "metadata": {...},  # Información del scraping
+                "books": [...]      # Lista de libros extraídos
+            }
         """
         data = {
             'metadata': self.metadata,
@@ -294,10 +385,18 @@ class GoodreadsScraper:
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         
-        print(f"\n✓ Datos guardados en: {output_path}")
-        print(f"  - Total de libros: {len(self.books)}")
-        print(f"  - Fecha de scraping: {self.metadata['scrape_date']}")
+        print(f"\n{'='*60}")
+        print(f"✓ Datos guardados exitosamente")
+        print(f"{'='*60}")
+        print(f"  Archivo: {output_path}")
+        print(f"  Total de libros: {len(self.books)}")
+        print(f"  Fecha de scraping: {self.metadata['scrape_date']}")
+        print(f"  Páginas scrapeadas: {self.metadata['pages_scraped']}")
 
+
+#═════════════════════════════════════════════════════════════════════════════
+# FUNCIÓN PRINCIPAL
+#═════════════════════════════════════════════════════════════════════════════
 
 def main():
     """Función principal para ejecutar el scraping"""
@@ -306,10 +405,14 @@ def main():
     import os
     os.makedirs('landing', exist_ok=True)
     
+    print("\n" + "="*70)
+    print("  EJERCICIO 1: SCRAPING DE GOODREADS")
+    print("="*70 + "\n")
+    
     # Inicializar scraper
     scraper = GoodreadsScraper()
     
-    # Realizar búsqueda
+    # Realizar búsqueda (15 libros para obtener la máxima puntuación)
     search_term = "data science"
     scraper.search_books(search_term, max_books=15)
     
@@ -317,9 +420,9 @@ def main():
     output_path = "landing/goodreads_books.json"
     scraper.save_to_json(output_path)
     
-    print("\n" + "="*60)
+    print("\n" + "="*70)
     print("EJERCICIO 1 COMPLETADO")
-    print("="*60)
+    print("="*70)
 
 
 if __name__ == "__main__":

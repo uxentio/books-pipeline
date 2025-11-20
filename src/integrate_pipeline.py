@@ -296,7 +296,7 @@ class BooksPipeline:
         })
         
         # Concatenar ambas fuentes
-        df_all = pd.concat([df_gr_mapped, df_gb_mapped], ignore_index=True)
+        df_all = pd.concat([df_gr_mapped, df_gb_mapped], ignore_index=True, join='outer')
         
         # Crear clave de deduplicación
         df_all['dedup_key'] = df_all.apply(self._create_dedup_key, axis=1)
@@ -359,7 +359,7 @@ class BooksPipeline:
         # Seleccionar y ordenar columnas finales
         dim_book_cols = [
             'book_id', 'titulo', 'titulo_normalizado', 'autor_principal',
-            'autores_completo', 'editorial', 'anio_publicacion', 'fecha_publicacion',
+            'autores', 'editorial', 'anio_publicacion', 'fecha_publicacion',
             'idioma', 'isbn10', 'isbn13', 'categoria', 'precio', 'moneda',
             'rating_promedio', 'numero_ratings', 'fuente_ganadora'
         ]

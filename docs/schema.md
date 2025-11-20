@@ -1,7 +1,7 @@
 # Documentación del Esquema - Books Pipeline
 
 ## Fecha de generación
-2025-11-16T19:22:41.610617
+2025-11-20T17:30:42.220071
 
 ## Modelo de datos
 

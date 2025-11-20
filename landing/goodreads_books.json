@@ -3,10 +3,11 @@
     "scraper": "GoodreadsScraper",
     "search_term": "data science",
     "search_urls": [
-      "https://www.goodreads.com/search?q=data+science"
+      "https://www.goodreads.com/search?q=data+science&page=1",
+      "https://www.goodreads.com/search?q=data+science&page=2"
     ],
     "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-    "scrape_date": "2025-11-16T19:21:56.173361",
+    "scrape_date": "2025-11-20T17:27:16.212320",
     "selectors_used": {
       "title": ".BookCard__title a",
       "author": ".ContributorLink__name",
@@ -15,11 +16,12 @@
       "book_url": ".BookCard__title a[href]",
       "isbn": "meta[property=\"books:isbn\"]"
     },
-    "total_books_scraped": 10
+    "total_books_scraped": 15,
+    "pages_scraped": 1
   },
   "books": [
     {
-      "book_url": "https://www.goodreads.com/book/show/17912916-data-science-for-business?from_search=true&from_srp=true&qid=nBKYWJB0GF&rank=1",
+      "book_url": "https://www.goodreads.com/book/show/17912916-data-science-for-business?from_search=true&from_srp=true&qid=Rh37EXNijE&rank=1",
       "title": "Data Science for Business: What You Need to Know about Data Mining and Data-Analytic Thinking",
       "author": "Foster Provost",
       "rating": 4.13,
@@ -28,7 +30,7 @@
       "isbn13": null
     },
     {
-      "book_url": "https://www.goodreads.com/book/show/17682206-data-smart?from_search=true&from_srp=true&qid=nBKYWJB0GF&rank=2",
+      "book_url": "https://www.goodreads.com/book/show/17682206-data-smart?from_search=true&from_srp=true&qid=Rh37EXNijE&rank=2",
       "title": "Data Smart: Using Data Science to Transform Information into Insight",
       "author": "John W. Foreman",
       "rating": 4.12,
@@ -37,7 +39,7 @@
       "isbn13": null
     },
     {
-      "book_url": "https://www.goodreads.com/book/show/25407018-data-science-from-scratch?from_search=true&from_srp=true&qid=nBKYWJB0GF&rank=3",
+      "book_url": "https://www.goodreads.com/book/show/25407018-data-science-from-scratch?from_search=true&from_srp=true&qid=Rh37EXNijE&rank=3",
       "title": "Data Science from Scratch: First Principles with Python",
       "author": "Joel Grus",
       "rating": 3.91,
@@ -46,16 +48,16 @@
       "isbn13": null
     },
     {
-      "book_url": "https://www.goodreads.com/book/show/205905685-mindmasters?from_search=true&from_srp=true&qid=nBKYWJB0GF&rank=4",
+      "book_url": "https://www.goodreads.com/book/show/205905685-mindmasters?from_search=true&from_srp=true&qid=Rh37EXNijE&rank=4",
       "title": "Mindmasters: The Data-Driven Science of Predicting and Changing Human Behavior",
       "author": "Sandra Matz",
       "rating": 4.04,
-      "ratings_count": 288,
+      "ratings_count": 290,
       "isbn10": null,
       "isbn13": null
     },
     {
-      "book_url": "https://www.goodreads.com/book/show/33399049-r-for-data-science?from_search=true&from_srp=true&qid=nBKYWJB0GF&rank=5",
+      "book_url": "https://www.goodreads.com/book/show/33399049-r-for-data-science?from_search=true&from_srp=true&qid=Rh37EXNijE&rank=5",
       "title": "R for Data Science: Import, Tidy, Transform, Visualize, and Model Data",
       "author": "Hadley Wickham",
       "rating": 4.54,
@@ -64,7 +66,7 @@
       "isbn13": null
     },
     {
-      "book_url": "https://www.goodreads.com/book/show/17346997-doing-data-science?from_search=true&from_srp=true&qid=nBKYWJB0GF&rank=6",
+      "book_url": "https://www.goodreads.com/book/show/17346997-doing-data-science?from_search=true&from_srp=true&qid=Rh37EXNijE&rank=6",
       "title": "Doing Data Science: Straight Talk from the Frontline",
       "author": "Cathy O'Neil",
       "rating": 3.74,
@@ -73,16 +75,16 @@
       "isbn13": null
     },
     {
-      "book_url": "https://www.goodreads.com/book/show/34213247-numsense-data-science-for-the-layman?from_search=true&from_srp=true&qid=nBKYWJB0GF&rank=7",
+      "book_url": "https://www.goodreads.com/book/show/34213247-numsense-data-science-for-the-layman?from_search=true&from_srp=true&qid=Rh37EXNijE&rank=7",
       "title": "Numsense! Data Science for the Layman: No Math Added",
       "author": "Annalyn Ng",
       "rating": 4.14,
-      "ratings_count": 615,
+      "ratings_count": 616,
       "isbn10": null,
       "isbn13": null
     },
     {
-      "book_url": "https://www.goodreads.com/book/show/26457146-python-data-science-handbook?from_search=true&from_srp=true&qid=nBKYWJB0GF&rank=8",
+      "book_url": "https://www.goodreads.com/book/show/26457146-python-data-science-handbook?from_search=true&from_srp=true&qid=Rh37EXNijE&rank=8",
       "title": "Python Data Science Handbook: Essential Tools for Working with Data",
       "author": "Jake VanderPlas",
       "rating": 4.3,
@@ -91,20 +93,65 @@
       "isbn13": null
     },
     {
-      "book_url": "https://www.goodreads.com/book/show/36722689-data-science?from_search=true&from_srp=true&qid=nBKYWJB0GF&rank=9",
+      "book_url": "https://www.goodreads.com/book/show/36722689-data-science?from_search=true&from_srp=true&qid=Rh37EXNijE&rank=9",
       "title": "Data Science",
       "author": "John D. Kelleher",
       "rating": 3.9,
-      "ratings_count": 851,
+      "ratings_count": 853,
       "isbn10": null,
       "isbn13": null
     },
     {
-      "book_url": "https://www.goodreads.com/book/show/56357967-becoming-a-data-head?from_search=true&from_srp=true&qid=nBKYWJB0GF&rank=10",
+      "book_url": "https://www.goodreads.com/book/show/56357967-becoming-a-data-head?from_search=true&from_srp=true&qid=Rh37EXNijE&rank=10",
       "title": "Becoming a Data Head: How to Think, Speak, and Understand Data Science, Statistics, and Machine Learning",
       "author": "Alex J. Gutman",
-      "rating": 4.22,
-      "ratings_count": 423,
+      "rating": 4.21,
+      "ratings_count": 424,
+      "isbn10": null,
+      "isbn13": null
+    },
+    {
+      "book_url": "https://www.goodreads.com/book/show/58949285-ace-the-data-science-interview?from_search=true&from_srp=true&qid=Ta8GPjs4vn&rank=12",
+      "title": "Ace the Data Science Interview: 201 Real Interview Questions Asked By FAANG, Tech Startups, & Wall Street",
+      "author": "Kevin Huo",
+      "rating": 4.32,
+      "ratings_count": 193,
+      "isbn10": null,
+      "isbn13": null
+    },
+    {
+      "book_url": "https://www.goodreads.com/book/show/26299386-the-art-of-data-science?from_search=true&from_srp=true&qid=Ta8GPjs4vn&rank=13",
+      "title": "The Art of Data Science: A Guide for Anyone Who Works with Data",
+      "author": "Roger D. Peng",
+      "rating": 3.71,
+      "ratings_count": 297,
+      "isbn10": null,
+      "isbn13": null
+    },
+    {
+      "book_url": "https://www.goodreads.com/book/show/13638556-what-is-data-science?from_search=true&from_srp=true&qid=Ta8GPjs4vn&rank=14",
+      "title": "What Is Data Science?",
+      "author": "Mike Loukides",
+      "rating": 3.68,
+      "ratings_count": 590,
+      "isbn10": null,
+      "isbn13": null
+    },
+    {
+      "book_url": "https://www.goodreads.com/book/show/57182112-minding-the-machines?from_search=true&from_srp=true&qid=Ta8GPjs4vn&rank=15",
+      "title": "Minding the Machines: Building and Leading Data Science and Analytics Teams",
+      "author": "Jeremy  Adamson",
+      "rating": 4.32,
+      "ratings_count": 41,
+      "isbn10": null,
+      "isbn13": null
+    },
+    {
+      "book_url": "https://www.goodreads.com/book/show/30462852-computer-age-statistical-inference?from_search=true&from_srp=true&qid=Ta8GPjs4vn&rank=16",
+      "title": "Computer Age Statistical Inference: Algorithms, Evidence, and Data Science",
+      "author": "Bradley Efron",
+      "rating": 4.42,
+      "ratings_count": 128,
       "isbn10": null,
       "isbn13": null
     }
