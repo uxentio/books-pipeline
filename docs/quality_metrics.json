@@ -1,35 +1,69 @@
 {
+  "execution_date": "2025-11-20T18:06:06.500651",
   "pipeline_execution": {
-    "timestamp": "2025-11-20T17:30:42.218780",
-    "total_sources": 2,
-    "total_input_records": 30,
-    "total_output_records": 30
+    "status": "completed",
+    "duration_seconds": 0.09,
+    "timestamp": "2025-11-20T18:06:06.591831"
   },
   "source_breakdown": {
-    "goodreads_records": 15,
-    "googlebooks_records": 15
+    "goodreads": {
+      "total_records": 15,
+      "records_with_isbn": 0,
+      "records_with_rating": 15
+    },
+    "googlebooks": {
+      "total_records": 15,
+      "records_with_isbn": 15,
+      "records_with_price": 6
+    }
+  },
+  "source_files": {
+    "goodreads": {
+      "file": "..\\landing\\goodreads_books.json",
+      "records": 15,
+      "load_date": "2025-11-20T18:06:06.504421"
+    },
+    "googlebooks": {
+      "file": "..\\landing\\googlebooks_books.csv",
+      "records": 15,
+      "load_date": "2025-11-20T18:06:06.510053"
+    }
+  },
+  "record_counts": {
+    "dim_book_total": 15,
+    "dim_book_with_isbn": 14,
+    "dim_book_with_price": 5,
+    "dim_book_with_rating": 15,
+    "source_detail_total": 30,
+    "source_detail_goodreads": 15,
+    "source_detail_googlebooks": 15
   },
   "quality_checks": {
-    "goodreads_completeness": {
-      "title": 100.0,
-      "author": 100.0,
-      "book_url": 100.0
-    },
-    "googlebooks_completeness": {
-      "title": 100.0,
-      "authors": 100.0
-    },
-    "normalization": {
-      "dates_valid_pct": {
-        "fecha_publicacion_iso": 100.0
-      },
-      "languages_valid_pct": 100.0,
-      "currencies_valid_pct": 100.0,
-      "isbn13_valid_pct": 100.0,
-      "isbn10_valid_pct": 86.67
-    },
-    "duplicates_found": 0
+    "total_books": 15,
+    "books_with_complete_metadata": 14,
+    "books_with_rating": 15,
+    "books_with_price": 5
   },
-  "warnings": [],
-  "errors": []
+  "data_quality": {
+    "percent_valid_titles": 100.0,
+    "percent_valid_isbns": 93.33,
+    "percent_with_rating": 100.0,
+    "percent_with_price": 33.33,
+    "percent_with_googlebooks_data": 93.33,
+    "percent_with_year": 93.33
+  },
+  "deduplication": {
+    "matching": {
+      "total_books": 15,
+      "matched": 14,
+      "unmatched": 1,
+      "match_rate": "93.3%"
+    }
+  },
+  "execution_summary": {
+    "status": "success",
+    "start_time": "2025-11-20T18:06:06.500661",
+    "end_time": "2025-11-20T18:06:06.591831",
+    "execution_time_seconds": 0.09
+  }
 }

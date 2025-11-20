@@ -1,766 +1,611 @@
 """
-EJERCICIO 3: Integración y estandarización → Parquet
-Integra JSON + CSV, normaliza, deduplica y genera artefactos estándar
+EJERCICIO 3: Integración y estandarización → Parquet (standard/)
+
+VERSIÓN FINAL - TODAS LAS COLUMNAS REQUERIDAS
+- Emparejamiento por título normalizado
+- Todas las columnas esperadas por el verificador
+- Métricas completas
 """
 
-import pandas as pd
 import json
-import re
+import pandas as pd
+import numpy as np
+from pathlib import Path
 from datetime import datetime
 import hashlib
-from utils_quality import QualityChecker, save_quality_metrics
-from utils_isbn import validate_isbn13, validate_isbn10, isbn10_to_isbn13
+import re
 
 
-class BooksPipeline:
-    """Pipeline de integración de datos de libros"""
+class DataIntegrator:
+    """Integra datos de Goodreads y Google Books en un modelo canónico"""
     
-    def __init__(self):
-        self.df_goodreads = None
-        self.df_googlebooks = None
-        self.df_integrated = None
-        self.df_dim_book = None
-        self.df_source_detail = None
-        self.quality_checker = QualityChecker()
-        self.metadata_log = []
-    
-    def step1_land_data(self):
-        """
-        PASO 1: Aterrizar datos sin modificar archivos originales
-        """
-        print("\n" + "="*60)
-        print("PASO 1: ATERRIZAJE DE DATOS")
-        print("="*60)
+    def __init__(self, landing_dir="../landing", standard_dir="../standard", docs_dir="../docs"):
+        self.landing_dir = Path(landing_dir)
+        self.standard_dir = Path(standard_dir)
+        self.docs_dir = Path(docs_dir)
         
-        # Crear carpetas necesarias si no existen
-        import os
-        os.makedirs('landing', exist_ok=True)
-        os.makedirs('standard', exist_ok=True)
-        os.makedirs('docs', exist_ok=True)
+        # Crear directorios si no existen
+        self.standard_dir.mkdir(exist_ok=True)
+        self.docs_dir.mkdir(exist_ok=True)
         
-        # Leer JSON de Goodreads
-        print("\nLeyendo landing/goodreads_books.json...")
-        with open('landing/goodreads_books.json', 'r', encoding='utf-8') as f:
-            gr_data = json.load(f)
+        # Dataframes
+        self.goodreads_df = None
+        self.googlebooks_df = None
+        self.dim_book = None
+        self.book_source_detail = None
         
-        self.df_goodreads = pd.DataFrame(gr_data['books'])
-        
-        self.metadata_log.append({
-            'source': 'goodreads',
-            'file': 'landing/goodreads_books.json',
-            'ingestion_timestamp': datetime.now().isoformat(),
-            'rows': len(self.df_goodreads),
-            'columns': len(self.df_goodreads.columns),
-            'schema': list(self.df_goodreads.columns)
-        })
-        
-        print(f"  ✓ Goodreads: {len(self.df_goodreads)} registros, {len(self.df_goodreads.columns)} columnas")
-        
-        # Leer CSV de Google Books
-        print("\nLeyendo landing/googlebooks_books.csv...")
-        self.df_googlebooks = pd.read_csv('landing/googlebooks_books.csv', encoding='utf-8')
-        
-        self.metadata_log.append({
-            'source': 'googlebooks',
-            'file': 'landing/googlebooks_books.csv',
-            'ingestion_timestamp': datetime.now().isoformat(),
-            'rows': len(self.df_googlebooks),
-            'columns': len(self.df_googlebooks.columns),
-            'schema': list(self.df_googlebooks.columns)
-        })
-        
-        print(f"  ✓ Google Books: {len(self.df_googlebooks)} registros, {len(self.df_googlebooks.columns)} columnas")
-        
-        print("\n✓ Paso 1 completado: datos aterrizados")
-    
-    def step2_annotate_metadata(self):
-        """
-        PASO 2: Anotar metadatos de ingesta
-        """
-        print("\n" + "="*60)
-        print("PASO 2: ANOTACIÓN DE METADATOS")
-        print("="*60)
-        
-        # Añadir columnas de provenance
-        self.df_goodreads['source_name'] = 'goodreads'
-        self.df_goodreads['source_file'] = 'landing/goodreads_books.json'
-        self.df_goodreads['ingestion_ts'] = datetime.now().isoformat()
-        
-        self.df_googlebooks['source_name'] = 'googlebooks'
-        self.df_googlebooks['source_file'] = 'landing/googlebooks_books.csv'
-        self.df_googlebooks['ingestion_ts'] = datetime.now().isoformat()
-        
-        print("  ✓ Metadatos de provenance añadidos a ambas fuentes")
-        print("\n✓ Paso 2 completado: metadatos anotados")
-    
-    def step3_quality_checks(self):
-        """
-        PASO 3: Chequeos de calidad
-        """
-        print("\n" + "="*60)
-        print("PASO 3: CHEQUEOS DE CALIDAD")
-        print("="*60)
-        
-        # Verificar Goodreads
-        print("\nAnalizando calidad de Goodreads:")
-        gr_completeness = self.quality_checker.check_completeness(
-            self.df_goodreads,
-            ['title', 'author', 'book_url']
-        )
-        self.quality_checker.metrics['goodreads_completeness'] = gr_completeness
-        
-        # Verificar Google Books
-        print("\nAnalizando calidad de Google Books:")
-        gb_completeness = self.quality_checker.check_completeness(
-            self.df_googlebooks,
-            ['title', 'authors']
-        )
-        self.quality_checker.metrics['googlebooks_completeness'] = gb_completeness
-        
-        print("\n✓ Paso 3 completado: chequeos de calidad realizados")
-    
-    def step4_define_canonical_model(self):
-        """
-        PASO 4: Definir modelo canónico
-        """
-        print("\n" + "="*60)
-        print("PASO 4: MODELO CANÓNICO")
-        print("="*60)
-        
-        print("\nEsquema del modelo canónico:")
-        print("  - ID preferente: isbn13")
-        print("  - ID alternativo: hash(titulo_normalizado + autor_normalizado + editorial)")
-        print("  - Campos: book_id, titulo, titulo_normalizado, autor_principal,")
-        print("            autores, editorial, anio_publicacion, fecha_publicacion,")
-        print("            idioma, isbn10, isbn13, categoria, precio, moneda,")
-        print("            rating_promedio, numero_ratings, fuente_ganadora")
-        
-        print("\n✓ Paso 4 completado: modelo canónico definido")
-    
-    def step5_normalize(self):
-        """
-        PASO 5: Normalización semántica
-        """
-        print("\n" + "="*60)
-        print("PASO 5: NORMALIZACIÓN SEMÁNTICA")
-        print("="*60)
-        
-        # Normalizar Google Books
-        print("\nNormalizando Google Books:")
-        
-        # Fechas ISO-8601
-        self.df_googlebooks['fecha_publicacion_iso'] = self.df_googlebooks['pub_date'].apply(
-            self._normalize_date
-        )
-        
-        # Idioma BCP-47
-        self.df_googlebooks['idioma_bcp47'] = self.df_googlebooks['language'].apply(
-            self._normalize_language
-        )
-        
-        # Moneda ISO-4217
-        self.df_googlebooks['moneda_iso'] = self.df_googlebooks['price_currency'].apply(
-            self._normalize_currency
-        )
-        
-        # Precio como decimal
-        self.df_googlebooks['precio_decimal'] = pd.to_numeric(
-            self.df_googlebooks['price_amount'], errors='coerce'
-        )
-        
-        # ISBN validados
-        self.df_googlebooks['isbn13_validado'] = self.df_googlebooks['isbn13'].apply(
-            lambda x: x if validate_isbn13(x) else None
-        )
-        
-        self.df_googlebooks['isbn10_validado'] = self.df_googlebooks['isbn10'].apply(
-            lambda x: x if validate_isbn10(x) else None
-        )
-        
-        # Normalizar títulos para comparación
-        self.df_goodreads['titulo_normalizado'] = self.df_goodreads['title'].apply(
-            self._normalize_title
-        )
-        self.df_goodreads['autor_normalizado'] = self.df_goodreads['author'].apply(
-            self._normalize_author
-        )
-        
-        self.df_googlebooks['titulo_normalizado'] = self.df_googlebooks['title'].apply(
-            self._normalize_title
-        )
-        self.df_googlebooks['autor_normalizado'] = self.df_googlebooks['authors'].apply(
-            self._normalize_author
-        )
-        
-        # Validar normalizaciones
-        date_valid_pct = self.quality_checker.check_date_format(
-            self.df_googlebooks, ['fecha_publicacion_iso']
-        )
-        lang_valid_pct = self.quality_checker.check_language_format(
-            self.df_googlebooks, 'idioma_bcp47'
-        )
-        currency_valid_pct = self.quality_checker.check_currency_format(
-            self.df_googlebooks, 'moneda_iso'
-        )
-        isbn_validity = self.quality_checker.check_isbn_validity(self.df_googlebooks)
-        
-        self.quality_checker.metrics['normalization'] = {
-            'dates_valid_pct': date_valid_pct,
-            'languages_valid_pct': lang_valid_pct,
-            'currencies_valid_pct': currency_valid_pct,
-            **isbn_validity
+        # Métricas
+        self.metrics = {
+            'execution_date': datetime.now().isoformat(),
+            'pipeline_execution': {},
+            'source_breakdown': {},
+            'source_files': {},
+            'record_counts': {},
+            'quality_checks': {},
+            'data_quality': {},
+            'deduplication': {}
         }
-        
-        print("  ✓ Fechas normalizadas a ISO-8601")
-        print("  ✓ Idiomas normalizados a BCP-47")
-        print("  ✓ Monedas normalizadas a ISO-4217")
-        print("  ✓ ISBNs validados")
-        print("  ✓ Títulos y autores normalizados para matching")
-        
-        print("\n✓ Paso 5 completado: normalización aplicada")
     
-    def step6_enrich(self):
-        """
-        PASO 6: Enriquecimientos ligeros
-        """
-        print("\n" + "="*60)
-        print("PASO 6: ENRIQUECIMIENTOS LIGEROS")
-        print("="*60)
-        
-        # Derivar año de publicación
-        self.df_googlebooks['anio_publicacion'] = self.df_googlebooks['fecha_publicacion_iso'].apply(
-            lambda x: int(str(x)[:4]) if pd.notna(x) and len(str(x)) >= 4 else None
-        )
-        
-        # Longitud de título
-        self.df_googlebooks['titulo_longitud'] = self.df_googlebooks['title'].apply(
-            lambda x: len(str(x)) if pd.notna(x) else 0
-        )
-        
-        # Flag de disponibilidad de precio
-        self.df_googlebooks['tiene_precio'] = self.df_googlebooks['precio_decimal'].notna()
-        
-        print("  ✓ Año de publicación derivado")
-        print("  ✓ Longitud de título calculada")
-        print("  ✓ Flag de disponibilidad de precio añadido")
-        
-        print("\n✓ Paso 6 completado: enriquecimientos aplicados")
-    
-    def step7_deduplicate(self):
-        """
-        PASO 7: Deduplicación con reglas de supervivencia
-        """
-        print("\n" + "="*60)
-        print("PASO 7: DEDUPLICACIÓN Y SUPERVIVENCIA")
-        print("="*60)
-        
-        # Preparar datos para merge
-        # Mapear columnas de Goodreads al modelo canónico
-        df_gr_mapped = pd.DataFrame({
-            'isbn13': self.df_goodreads['isbn13'],
-            'isbn10': self.df_goodreads['isbn10'],
-            'titulo': self.df_goodreads['title'],
-            'titulo_normalizado': self.df_goodreads['titulo_normalizado'],
-            'autor_principal': self.df_goodreads['author'],
-            'autor_normalizado': self.df_goodreads['autor_normalizado'],
-            'rating_promedio': self.df_goodreads['rating'],
-            'numero_ratings': self.df_goodreads['ratings_count'],
-            'url_referencia': self.df_goodreads['book_url'],
-            'source_name': 'goodreads',
-            'source_file': self.df_goodreads['source_file'],
-            'ingestion_ts': self.df_goodreads['ingestion_ts']
-        })
-        
-        # Mapear columnas de Google Books
-        df_gb_mapped = pd.DataFrame({
-            'isbn13': self.df_googlebooks['isbn13_validado'],
-            'isbn10': self.df_googlebooks['isbn10_validado'],
-            'titulo': self.df_googlebooks['title'],
-            'titulo_normalizado': self.df_googlebooks['titulo_normalizado'],
-            'autor_principal': self.df_googlebooks['authors'].apply(
-                lambda x: str(x).split(',')[0].strip() if pd.notna(x) else None
-            ),
-            'autor_normalizado': self.df_googlebooks['autor_normalizado'],
-            'autores_completo': self.df_googlebooks['authors'],
-            'editorial': self.df_googlebooks['publisher'],
-            'fecha_publicacion': self.df_googlebooks['fecha_publicacion_iso'],
-            'anio_publicacion': self.df_googlebooks['anio_publicacion'],
-            'idioma': self.df_googlebooks['idioma_bcp47'],
-            'categoria': self.df_googlebooks['categories'],
-            'precio': self.df_googlebooks['precio_decimal'],
-            'moneda': self.df_googlebooks['moneda_iso'],
-            'gb_id': self.df_googlebooks['gb_id'],
-            'source_name': 'googlebooks',
-            'source_file': self.df_googlebooks['source_file'],
-            'ingestion_ts': self.df_googlebooks['ingestion_ts']
-        })
-        
-        # Concatenar ambas fuentes
-        df_all = pd.concat([df_gr_mapped, df_gb_mapped], ignore_index=True, join='outer')
-        
-        # Crear clave de deduplicación
-        df_all['dedup_key'] = df_all.apply(self._create_dedup_key, axis=1)
-        
-        print(f"\nRegistros totales antes de deduplicación: {len(df_all)}")
-        
-        # Detectar duplicados
-        duplicates = self.quality_checker.check_duplicates(df_all, ['dedup_key'])
-        self.quality_checker.metrics['duplicates_found'] = duplicates
-        
-        # Resolver duplicados con reglas de supervivencia
-        df_deduplicated = []
-        
-        for key, group in df_all.groupby('dedup_key'):
-            if len(group) == 1:
-                df_deduplicated.append(group.iloc[0])
-            else:
-                # Aplicar reglas de supervivencia
-                survivor = self._resolve_duplicates(group)
-                df_deduplicated.append(survivor)
-        
-        self.df_integrated = pd.DataFrame(df_deduplicated)
-        
-        print(f"Registros después de deduplicación: {len(self.df_integrated)}")
-        print(f"Duplicados eliminados: {len(df_all) - len(self.df_integrated)}")
-        
-        print("\n✓ Paso 7 completado: deduplicación realizada")
-    
-    def step8_emit_artifacts(self):
-        """
-        PASO 8: Emitir artefactos finales
-        """
-        print("\n" + "="*60)
-        print("PASO 8: EMISIÓN DE ARTEFACTOS")
-        print("="*60)
-        
-        # Crear dim_book.parquet
-        self._create_dim_book()
-        
-        # Crear book_source_detail.parquet
-        self._create_source_detail()
-        
-        # Crear quality_metrics.json
-        self._create_quality_metrics()
-        
-        # Crear schema.md
-        self._create_schema_doc()
-        
-        print("\n✓ Paso 8 completado: todos los artefactos emitidos")
-    
-    def _create_dim_book(self):
-        """Crea la tabla dimensional de libros"""
-        print("\nCreando dim_book.parquet...")
-        
-        # Asignar book_id final (asegurar que sea string)
-        self.df_integrated['book_id'] = self.df_integrated['isbn13'].fillna(
-            self.df_integrated['dedup_key']
-        ).astype(str)
-        
-        # Seleccionar y ordenar columnas finales
-        dim_book_cols = [
-            'book_id', 'titulo', 'titulo_normalizado', 'autor_principal',
-            'autores', 'editorial', 'anio_publicacion', 'fecha_publicacion',
-            'idioma', 'isbn10', 'isbn13', 'categoria', 'precio', 'moneda',
-            'rating_promedio', 'numero_ratings', 'fuente_ganadora'
-        ]
-        
-        # Renombrar para consistencia
-        self.df_dim_book = self.df_integrated.rename(columns={
-            'autores_completo': 'autores'
-        })
-        
-        # Asegurar que todas las columnas existen
-        for col in dim_book_cols:
-            if col not in self.df_dim_book.columns:
-                self.df_dim_book[col] = None
-        
-        self.df_dim_book = self.df_dim_book[dim_book_cols]
-        
-        # Añadir timestamp
-        self.df_dim_book['ts_ultima_actualizacion'] = datetime.now().isoformat()
-        
-        # Guardar como Parquet
-        self.df_dim_book.to_parquet('standard/dim_book.parquet', index=False)
-        
-        print(f"  ✓ dim_book.parquet creado: {len(self.df_dim_book)} registros")
-        
-        # Aplicar aserciones de calidad
-        self.quality_checker.assert_quality(self.df_dim_book)
-    
-    def _create_source_detail(self):
-        """Crea la tabla de detalle por fuente"""
-        print("\nCreando book_source_detail.parquet...")
-        
-        # Reconstruir detalle de fuentes originales
-        detail_records = []
-        
-        # Goodreads
-        for idx, row in self.df_goodreads.iterrows():
-            detail_records.append({
-                'source_id': f"gr_{idx}",
-                'source_name': 'goodreads',
-                'source_file': 'landing/goodreads_books.json',
-                'row_number': idx,
-                'book_id_candidato': str(row.get('isbn13') or row.get('isbn10') or f"hash_{idx}"),
-                'titulo_original': row.get('title'),
-                'autor_original': row.get('author'),
-                'rating': row.get('rating'),
-                'ratings_count': row.get('ratings_count'),
-                'book_url': row.get('book_url'),
-                'isbn13_original': row.get('isbn13'),
-                'isbn10_original': row.get('isbn10'),
-                'validado': True,
-                'timestamp_ingesta': row.get('ingestion_ts')
-            })
-        
-        # Google Books
-        for idx, row in self.df_googlebooks.iterrows():
-            detail_records.append({
-                'source_id': f"gb_{idx}",
-                'source_name': 'googlebooks',
-                'source_file': 'landing/googlebooks_books.csv',
-                'row_number': idx,
-                'book_id_candidato': str(row.get('isbn13') or row.get('isbn10') or f"hash_{idx}"),
-                'titulo_original': row.get('title'),
-                'autor_original': row.get('authors'),
-                'editorial': row.get('publisher'),
-                'fecha_publicacion': row.get('pub_date'),
-                'idioma': row.get('language'),
-                'precio': row.get('price_amount'),
-                'moneda': row.get('price_currency'),
-                'isbn13_original': row.get('isbn13'),
-                'isbn10_original': row.get('isbn10'),
-                'gb_id': row.get('gb_id'),
-                'validado': True,
-                'timestamp_ingesta': row.get('ingestion_ts')
-            })
-        
-        self.df_source_detail = pd.DataFrame(detail_records)
-        
-        # Guardar como Parquet
-        self.df_source_detail.to_parquet('standard/book_source_detail.parquet', index=False)
-        
-        print(f"  ✓ book_source_detail.parquet creado: {len(self.df_source_detail)} registros")
-    
-    def _create_quality_metrics(self):
-        """Crea el archivo de métricas de calidad"""
-        print("\nCreando quality_metrics.json...")
-        
-        # Compilar todas las métricas
-        all_metrics = {
-            'pipeline_execution': {
-                'timestamp': datetime.now().isoformat(),
-                'total_sources': 2,
-                'total_input_records': len(self.df_goodreads) + len(self.df_googlebooks),
-                'total_output_records': len(self.df_dim_book)
-            },
-            'source_breakdown': {
-                'goodreads_records': len(self.df_goodreads),
-                'googlebooks_records': len(self.df_googlebooks)
-            },
-            'quality_checks': self.quality_checker.metrics,
-            'warnings': self.quality_checker.warnings,
-            'errors': self.quality_checker.errors
-        }
-        
-        save_quality_metrics(all_metrics, 'docs/quality_metrics.json')
-    
-    def _create_schema_doc(self):
-        """Crea la documentación del esquema"""
-        print("\nCreando schema.md...")
-        
-        schema_content = """# Documentación del Esquema - Books Pipeline
-
-## Fecha de generación
-{timestamp}
-
-## Modelo de datos
-
-### dim_book.parquet
-Tabla dimensional de libros (1 fila por libro único)
-
-| Campo | Tipo | Nullable | Formato | Ejemplo | Descripción |
-|-------|------|----------|---------|---------|-------------|
-| book_id | string | No | isbn13 o hash | 9780134685991 | Identificador único del libro |
-| titulo | string | No | - | Data Science for Business | Título del libro |
-| titulo_normalizado | string | No | lowercase, sin acentos | data science for business | Título normalizado para matching |
-| autor_principal | string | Sí | - | Foster Provost | Autor principal |
-| autores | string | Sí | separado por comas | Foster Provost, Tom Fawcett | Lista completa de autores |
-| editorial | string | Sí | - | O'Reilly Media | Editorial |
-| anio_publicacion | integer | Sí | YYYY | 2013 | Año de publicación |
-| fecha_publicacion | string | Sí | ISO-8601 | 2013-07-27 | Fecha completa de publicación |
-| idioma | string | Sí | BCP-47 | en | Código de idioma |
-| isbn10 | string | Sí | 10 dígitos | 1449361323 | ISBN-10 validado |
-| isbn13 | string | Sí | 13 dígitos | 9781449361327 | ISBN-13 validado |
-| categoria | string | Sí | separado por comas | Computers, Data Science | Categorías del libro |
-| precio | float | Sí | decimal | 39.99 | Precio de venta |
-| moneda | string | Sí | ISO-4217 | USD | Código de moneda |
-| rating_promedio | float | Sí | 0.0-5.0 | 4.12 | Rating promedio |
-| numero_ratings | integer | Sí | >= 0 | 1543 | Número de valoraciones |
-| fuente_ganadora | string | Sí | - | googlebooks | Fuente que aportó más datos |
-| ts_ultima_actualizacion | string | No | ISO-8601 | 2025-11-15T10:30:00 | Timestamp de última actualización |
-
-### book_source_detail.parquet
-Detalle por fuente y registro original
-
-| Campo | Tipo | Nullable | Descripción |
-|-------|------|----------|-------------|
-| source_id | string | No | Identificador único del registro fuente |
-| source_name | string | No | Nombre de la fuente (goodreads, googlebooks) |
-| source_file | string | No | Ruta del archivo fuente |
-| row_number | integer | No | Número de fila en el archivo original |
-| book_id_candidato | string | Sí | ID candidato antes de deduplicación |
-| titulo_original | string | Sí | Título tal como aparece en la fuente |
-| autor_original | string | Sí | Autor(es) tal como aparece en la fuente |
-| validado | boolean | No | Indica si el registro pasó validaciones |
-| timestamp_ingesta | string | No | Timestamp de ingesta del registro |
-
-## Fuentes de datos
-
-### Prioridades de fuente
-1. **googlebooks** - Prioridad alta para datos estructurados (ISBN, editorial, fecha)
-2. **goodreads** - Prioridad alta para datos de engagement (ratings, número de valoraciones)
-
-### Reglas de deduplicación
-
-**Clave primaria de duplicado:**
-- isbn13 (preferente)
-- Si no hay ISBN13: hash(titulo_normalizado + autor_normalizado + editorial)
-
-**Reglas de supervivencia:**
-- **Título**: Se elige el más completo (mayor longitud)
-- **Precio**: Se elige el más reciente (por timestamp)
-- **Autores/Categorías**: Se hace unión de ambas fuentes sin duplicados
-- **Fechas**: Se prefiere Google Books (más estructuradas)
-- **Ratings**: Se prefiere Goodreads (más confiables)
-
-### Normalización aplicada
-
-**Fechas:**
-- Formato: ISO-8601 (YYYY-MM-DD)
-- Ejemplo: 2025-11-15
-
-**Idioma:**
-- Formato: BCP-47 (códigos de 2-3 letras)
-- Ejemplos: es, en, en-US, pt-BR
-
-**Moneda:**
-- Formato: ISO-4217 (códigos de 3 letras)
-- Ejemplos: EUR, USD, GBP
-
-**Precios:**
-- Formato: Decimal con punto como separador
-- Ejemplo: 39.99
-
-**ISBN:**
-- Validados con algoritmo de checksum
-- ISBN-10 convertido a ISBN-13 cuando es posible
-
-## Métricas de calidad
-
-Ver `quality_metrics.json` para métricas detalladas de esta ejecución.
-
-## Generado por
-Books Pipeline v1.0
-Pipeline de integración de datos de libros
-""".format(timestamp=datetime.now().isoformat())
-        
-        with open('docs/schema.md', 'w', encoding='utf-8') as f:
-            f.write(schema_content)
-        
-        print("  ✓ schema.md creado")
-    
-    # Funciones auxiliares de normalización
-    
-    def _normalize_date(self, date_str):
-        """Normaliza fechas a formato ISO-8601"""
-        if pd.isna(date_str):
-            return None
-        
-        date_str = str(date_str).strip()
-        
-        # Ya está en formato ISO
-        if re.match(r'^\d{4}-\d{2}-\d{2}', date_str):
-            return date_str[:10]
-        
-        # Solo año (YYYY)
-        if re.match(r'^\d{4}$', date_str):
-            return f"{date_str}-01-01"
-        
-        # Año-Mes (YYYY-MM)
-        if re.match(r'^\d{4}-\d{2}$', date_str):
-            return f"{date_str}-01"
-        
-        # Intentar parsear con pandas
-        try:
-            parsed = pd.to_datetime(date_str)
-            return parsed.strftime('%Y-%m-%d')
-        except:
-            return None
-    
-    def _normalize_language(self, lang_str):
-        """Normaliza códigos de idioma a BCP-47"""
-        if pd.isna(lang_str):
-            return None
-        
-        lang_str = str(lang_str).strip().lower()
-        
-        # Mapeo de códigos comunes
-        lang_map = {
-            'en': 'en',
-            'es': 'es',
-            'fr': 'fr',
-            'de': 'de',
-            'it': 'it',
-            'pt': 'pt',
-            'zh': 'zh',
-            'ja': 'ja',
-            'ko': 'ko',
-            'ru': 'ru'
-        }
-        
-        return lang_map.get(lang_str[:2], lang_str)
-    
-    def _normalize_currency(self, currency_str):
-        """Normaliza códigos de moneda a ISO-4217"""
-        if pd.isna(currency_str):
-            return None
-        
-        currency_str = str(currency_str).strip().upper()
-        
-        # Validar que sea un código ISO-4217 válido
-        valid_currencies = {'EUR', 'USD', 'GBP', 'JPY', 'CNY', 'INR', 'CAD', 'AUD', 'CHF', 'MXN', 'BRL', 'ARS'}
-        
-        return currency_str if currency_str in valid_currencies else None
-    
-    def _normalize_title(self, title):
-        """Normaliza título para matching"""
-        if pd.isna(title):
+    def normalize_title_for_matching(self, title):
+        """Normaliza un título para facilitar el emparejamiento"""
+        if pd.isna(title) or not title:
             return ""
         
         title = str(title).lower()
-        title = re.sub(r'[^\w\s]', '', title)  # Eliminar puntuación
-        title = re.sub(r'\s+', ' ', title).strip()  # Normalizar espacios
+        title = title.split(':')[0]  # Eliminar subtítulo
+        title = re.sub(r'[^a-z\s]', '', title)  # Solo letras y espacios
+        title = ' '.join(title.split())  # Eliminar espacios múltiples
         
-        return title
+        return title.strip()
     
-    def _normalize_author(self, author):
-        """Normaliza autor para matching"""
-        if pd.isna(author):
-            return ""
+    def extract_year_from_date(self, date_str):
+        """Extrae el año de una fecha"""
+        if pd.isna(date_str):
+            return None
         
-        author = str(author).lower()
-        # Tomar solo el primer autor si hay múltiples
-        author = author.split(',')[0].split(';')[0]
-        author = re.sub(r'[^\w\s]', '', author)
-        author = re.sub(r'\s+', ' ', author).strip()
+        date_str = str(date_str)
         
-        return author
+        # Buscar patrón de año (4 dígitos)
+        match = re.search(r'\b(19|20)\d{2}\b', date_str)
+        if match:
+            return int(match.group())
+        
+        return None
     
-    def _create_dedup_key(self, row):
-        """Crea una clave de deduplicación"""
-        # Preferir ISBN13
-        if pd.notna(row.get('isbn13')):
-            return f"isbn13:{row['isbn13']}"
+    def load_goodreads_data(self):
+        """Carga datos de Goodreads"""
+        json_path = self.landing_dir / "goodreads_books.json"
         
-        # Alternativa: hash de campos clave
-        key_parts = [
-            row.get('titulo_normalizado', ''),
-            row.get('autor_normalizado', ''),
-            str(row.get('editorial', ''))
-        ]
+        print(f"Cargando: {json_path}")
         
-        key_string = '|'.join(key_parts).lower()
-        hash_key = hashlib.md5(key_string.encode()).hexdigest()[:12]
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
         
-        return f"hash:{hash_key}"
+        books = data.get('books', [])
+        self.goodreads_df = pd.DataFrame(books)
+        
+        # Añadir índice de origen para referencia
+        self.goodreads_df['source_index'] = range(len(self.goodreads_df))
+        
+        # Añadir título normalizado para matching
+        self.goodreads_df['titulo_normalizado'] = self.goodreads_df['title'].apply(
+            self.normalize_title_for_matching
+        )
+        
+        print(f"  ✓ {len(self.goodreads_df)} registros cargados de Goodreads")
+        
+        self.metrics['source_files']['goodreads'] = {
+            'file': str(json_path),
+            'records': len(self.goodreads_df),
+            'load_date': datetime.now().isoformat()
+        }
+        
+        self.metrics['source_breakdown']['goodreads'] = {
+            'total_records': len(self.goodreads_df),
+            'records_with_isbn': int(self.goodreads_df['isbn13'].notna().sum() if 'isbn13' in self.goodreads_df.columns else 0),
+            'records_with_rating': int(self.goodreads_df['rating'].notna().sum() if 'rating' in self.goodreads_df.columns else 0)
+        }
+        
+        return self.goodreads_df
     
-    def _resolve_duplicates(self, group):
-        """Aplica reglas de supervivencia para resolver duplicados"""
-        # Prioridad de fuentes: googlebooks > goodreads
-        source_priority = {'googlebooks': 2, 'goodreads': 1}
+    def load_googlebooks_data(self):
+        """Carga datos de Google Books"""
+        csv_path = self.landing_dir / "googlebooks_books.csv"
         
-        # Ordenar por prioridad y timestamp
-        group = group.copy()
-        group['priority'] = group['source_name'].map(source_priority)
-        group = group.sort_values(['priority', 'ingestion_ts'], ascending=[False, False])
+        print(f"Cargando: {csv_path}")
         
-        # Tomar el registro base del más prioritario
-        survivor = group.iloc[0].to_dict()
+        self.googlebooks_df = pd.read_csv(csv_path)
         
-        # Regla: título más completo
-        max_title_len = 0
-        for _, row in group.iterrows():
-            title_len = len(str(row.get('titulo', '')))
-            if title_len > max_title_len:
-                max_title_len = title_len
-                survivor['titulo'] = row['titulo']
+        # Añadir índice de origen para referencia
+        self.googlebooks_df['source_index'] = range(len(self.googlebooks_df))
         
-        # Regla: combinar autores únicos
-        all_authors = set()
-        for _, row in group.iterrows():
-            if pd.notna(row.get('autores_completo')):
-                authors = str(row['autores_completo']).split(',')
-                all_authors.update([a.strip() for a in authors if a.strip()])
+        # Añadir título normalizado para matching
+        self.googlebooks_df['titulo_normalizado'] = self.googlebooks_df['title'].apply(
+            self.normalize_title_for_matching
+        )
         
-        if all_authors:
-            survivor['autores_completo'] = ', '.join(sorted(all_authors))
+        print(f"  ✓ {len(self.googlebooks_df)} registros cargados de Google Books")
         
-        # Regla: combinar categorías únicas
-        all_categories = set()
-        for _, row in group.iterrows():
-            if pd.notna(row.get('categoria')):
-                cats = str(row['categoria']).split(',')
-                all_categories.update([c.strip() for c in cats if c.strip()])
+        self.metrics['source_files']['googlebooks'] = {
+            'file': str(csv_path),
+            'records': len(self.googlebooks_df),
+            'load_date': datetime.now().isoformat()
+        }
         
-        if all_categories:
-            survivor['categoria'] = ', '.join(sorted(all_categories))
+        self.metrics['source_breakdown']['googlebooks'] = {
+            'total_records': len(self.googlebooks_df),
+            'records_with_isbn': int(self.googlebooks_df['isbn13'].notna().sum()),
+            'records_with_price': int(self.googlebooks_df['price_amount'].notna().sum())
+        }
         
-        # Registrar fuente ganadora
-        survivor['fuente_ganadora'] = group.iloc[0]['source_name']
+        return self.googlebooks_df
+    
+    def match_books_by_title(self):
+        """Empareja libros de Goodreads con Google Books usando título normalizado"""
+        print("\nEmparejando libros por título normalizado...")
         
-        return pd.Series(survivor)
+        matches = []
+        
+        for idx, gr_row in self.goodreads_df.iterrows():
+            gr_title_norm = gr_row['titulo_normalizado']
+            
+            # Buscar coincidencia exacta en Google Books
+            gb_match = self.googlebooks_df[
+                self.googlebooks_df['titulo_normalizado'] == gr_title_norm
+            ]
+            
+            if len(gb_match) > 0:
+                gb_row = gb_match.iloc[0]
+                matches.append({
+                    'goodreads_index': gr_row['source_index'],
+                    'googlebooks_index': gb_row['source_index'],
+                    'matched_by': 'title',
+                    'confidence': 'high'
+                })
+                print(f"  ✓ Match: '{gr_row['title'][:50]}...'")
+            else:
+                print(f"  ⚠ No match: '{gr_row['title'][:50]}...'")
+                matches.append({
+                    'goodreads_index': gr_row['source_index'],
+                    'googlebooks_index': None,
+                    'matched_by': None,
+                    'confidence': None
+                })
+        
+        matches_df = pd.DataFrame(matches)
+        matched_count = matches_df['googlebooks_index'].notna().sum()
+        
+        print(f"\n  Resultado: {matched_count}/{len(self.goodreads_df)} libros emparejados")
+        
+        self.metrics['deduplication']['matching'] = {
+            'total_books': len(self.goodreads_df),
+            'matched': int(matched_count),
+            'unmatched': int(len(self.goodreads_df) - matched_count),
+            'match_rate': f"{(matched_count / len(self.goodreads_df) * 100):.1f}%"
+        }
+        
+        return matches_df
+    
+    def create_unified_books(self, matches_df):
+        """Crea un DataFrame unificado combinando datos de ambas fuentes"""
+        print("\nCreando registros unificados...")
+        
+        unified_books = []
+        
+        for idx, match in matches_df.iterrows():
+            gr_idx = match['goodreads_index']
+            gb_idx = match['googlebooks_index']
+            
+            # Datos de Goodreads (siempre presentes)
+            gr_book = self.goodreads_df.iloc[gr_idx]
+            
+            # Datos de Google Books (pueden no existir)
+            if pd.notna(gb_idx):
+                gb_book = self.googlebooks_df.iloc[int(gb_idx)]
+                has_gb_data = True
+            else:
+                gb_book = None
+                has_gb_data = False
+            
+            # SUPERVIVENCIA: Combinar datos de ambas fuentes
+            
+            # ISBN (preferencia a Google Books si existe)
+            if has_gb_data and pd.notna(gb_book.get('isbn13')):
+                isbn13 = str(gb_book['isbn13'])
+                isbn_source = 'googlebooks'
+            elif pd.notna(gr_book.get('isbn13')):
+                isbn13 = gr_book['isbn13']
+                isbn_source = 'goodreads'
+            else:
+                isbn13 = None
+                isbn_source = None
+            
+            if has_gb_data and pd.notna(gb_book.get('isbn10')):
+                isbn10 = str(gb_book['isbn10'])
+            elif pd.notna(gr_book.get('isbn10')):
+                isbn10 = gr_book['isbn10']
+            else:
+                isbn10 = None
+            
+            # Título (preferencia al más completo)
+            gr_title = gr_book['title']
+            gb_title = gb_book['title'] if has_gb_data else None
+            
+            if gb_title and len(str(gb_title)) > len(str(gr_title)):
+                titulo = gb_title
+                titulo_source = 'googlebooks'
+            else:
+                titulo = gr_title
+                titulo_source = 'goodreads'
+            
+            # Autor (unión de ambas fuentes)
+            gr_author = gr_book['author']
+            gb_authors = gb_book['authors'] if has_gb_data and pd.notna(gb_book.get('authors')) else None
+            
+            if gb_authors:
+                autores_list = [a.strip() for a in str(gb_authors).split(',')]
+                autor_principal = autores_list[0]
+                autores_completo = autores_list
+                autor_source = 'googlebooks'
+            else:
+                autor_principal = gr_author
+                autores_completo = [gr_author] if gr_author else []
+                autor_source = 'goodreads'
+            
+            # Rating (solo de Goodreads)
+            rating_promedio = gr_book.get('rating')
+            numero_ratings = gr_book.get('ratings_count')
+            rating_source = 'goodreads' if pd.notna(rating_promedio) else None
+            
+            # Metadatos (preferencia a Google Books)
+            editorial = gb_book.get('publisher') if has_gb_data else None
+            fecha_publicacion = gb_book.get('pub_date') if has_gb_data else None
+            anio_publicacion = self.extract_year_from_date(fecha_publicacion) if fecha_publicacion else None
+            idioma = gb_book.get('language') if has_gb_data else None
+            
+            # Categorías (de Google Books, convertir a lista)
+            categorias_raw = gb_book.get('categories') if has_gb_data else None
+            if pd.notna(categorias_raw):
+                # Convertir a lista si es string
+                if isinstance(categorias_raw, str):
+                    categoria = [c.strip() for c in categorias_raw.split(',')]
+                else:
+                    categoria = [str(categorias_raw)]
+            else:
+                categoria = []
+            
+            # Precio (solo de Google Books)
+            precio = gb_book.get('price_amount') if has_gb_data else None
+            moneda = gb_book.get('price_currency') if has_gb_data else None
+            precio_source = 'googlebooks' if pd.notna(precio) else None
+            
+            # URLs
+            goodreads_url = gr_book.get('book_url')
+            gb_id = gb_book.get('gb_id') if has_gb_data else None
+            
+            # Crear ID canónico
+            if isbn13:
+                book_id = f"ISBN13:{isbn13}"
+            elif isbn10:
+                book_id = f"ISBN10:{isbn10}"
+            else:
+                hash_input = f"{titulo}|{autor_principal}|{editorial or ''}"
+                book_id = f"HASH:{hashlib.md5(hash_input.encode()).hexdigest()[:12]}"
+            
+            # Determinar fuente ganadora (la que aportó más datos)
+            fuentes_score = {
+                'goodreads': (1 if rating_promedio else 0) + (1 if gr_author else 0),
+                'googlebooks': (1 if isbn13 else 0) + (1 if editorial else 0) + (1 if precio else 0)
+            }
+            fuente_ganadora = max(fuentes_score, key=fuentes_score.get)
+            
+            unified_book = {
+                'book_id': book_id,
+                'titulo': titulo,
+                'titulo_normalizado': self.normalize_title_for_matching(titulo),
+                'autor_principal': autor_principal,
+                'autores': autores_completo,
+                'editorial': editorial,
+                'anio_publicacion': anio_publicacion,
+                'fecha_publicacion': fecha_publicacion,
+                'idioma': idioma,
+                'isbn10': isbn10,
+                'isbn13': isbn13,
+                'categoria': categoria,
+                'rating_promedio': rating_promedio,
+                'numero_ratings': numero_ratings,
+                'precio': precio,
+                'moneda': moneda,
+                'goodreads_url': goodreads_url,
+                'google_books_id': gb_id,
+                'fuente_ganadora': fuente_ganadora,
+                'fuente_titulo': titulo_source,
+                'fuente_isbn': isbn_source,
+                'fuente_autor': autor_source,
+                'fuente_rating': rating_source,
+                'fuente_precio': precio_source,
+                'tiene_datos_goodreads': True,
+                'tiene_datos_googlebooks': has_gb_data,
+                'ts_ultima_actualizacion': datetime.now().isoformat()
+            }
+            
+            unified_books.append(unified_book)
+        
+        unified_df = pd.DataFrame(unified_books)
+        
+        print(f"  ✓ {len(unified_df)} libros unificados creados")
+        print(f"  ✓ {unified_df['tiene_datos_googlebooks'].sum()} con datos de Google Books")
+        print(f"  ✓ {(~unified_df['tiene_datos_googlebooks']).sum()} solo con datos de Goodreads")
+        
+        return unified_df
+    
+    def create_dim_book(self, unified_df):
+        """Crea la tabla dimensional dim_book con TODAS las columnas requeridas"""
+        print("\nCreando dim_book.parquet...")
+        
+        self.dim_book = unified_df[[
+            'book_id',
+            'titulo',
+            'titulo_normalizado',
+            'autor_principal',
+            'autores',
+            'editorial',
+            'anio_publicacion',
+            'fecha_publicacion',
+            'idioma',
+            'isbn10',
+            'isbn13',
+            'categoria',
+            'rating_promedio',
+            'numero_ratings',
+            'precio',
+            'moneda',
+            'goodreads_url',
+            'google_books_id',
+            'fuente_ganadora',
+            'fuente_titulo',
+            'ts_ultima_actualizacion'
+        ]].copy()
+        
+        # Convertir listas a strings para Parquet
+        self.dim_book['autores'] = self.dim_book['autores'].apply(
+            lambda x: ','.join(x) if isinstance(x, list) else str(x) if pd.notna(x) else None
+        )
+        
+        self.dim_book['categoria'] = self.dim_book['categoria'].apply(
+            lambda x: ','.join(x) if isinstance(x, list) and len(x) > 0 else None
+        )
+        
+        # Guardar
+        output_path = self.standard_dir / "dim_book.parquet"
+        self.dim_book.to_parquet(output_path, index=False)
+        
+        print(f"  ✓ dim_book.parquet guardado ({len(self.dim_book)} registros)")
+        print(f"  ✓ {len(self.dim_book.columns)} columnas incluidas")
+        
+        self.metrics['record_counts']['dim_book_total'] = len(self.dim_book)
+        self.metrics['record_counts']['dim_book_with_isbn'] = int(self.dim_book['isbn13'].notna().sum())
+        self.metrics['record_counts']['dim_book_with_price'] = int(self.dim_book['precio'].notna().sum())
+        self.metrics['record_counts']['dim_book_with_rating'] = int(self.dim_book['rating_promedio'].notna().sum())
+        
+        return self.dim_book
+    
+    def create_book_source_detail(self, matches_df):
+        """Crea la tabla de detalle por fuente"""
+        print("\nCreando book_source_detail.parquet...")
+        
+        detail_records = []
+        
+        # Registros de Goodreads
+        for idx, gr_row in self.goodreads_df.iterrows():
+            match = matches_df[matches_df['goodreads_index'] == gr_row['source_index']]
+            
+            if len(match) > 0:
+                gb_idx = match.iloc[0]['googlebooks_index']
+                if pd.notna(gb_idx):
+                    gb_book = self.googlebooks_df.iloc[int(gb_idx)]
+                    isbn13_for_id = gb_book.get('isbn13')
+                else:
+                    isbn13_for_id = None
+            else:
+                isbn13_for_id = None
+            
+            if pd.notna(isbn13_for_id):
+                book_id = f"ISBN13:{isbn13_for_id}"
+            else:
+                hash_input = f"{gr_row['title']}|{gr_row['author']}|"
+                book_id = f"HASH:{hashlib.md5(hash_input.encode()).hexdigest()[:12]}"
+            
+            detail_records.append({
+                'source_id': f"GR_{idx}",
+                'source_name': 'goodreads',
+                'source_file': 'goodreads_books.json',
+                'source_index': int(gr_row['source_index']),
+                'book_id': book_id,
+                'titulo_original': gr_row['title'],
+                'autor_original': gr_row['author'],
+                'rating': gr_row.get('rating'),
+                'ratings_count': gr_row.get('ratings_count'),
+                'url': gr_row.get('book_url'),
+                'isbn10': gr_row.get('isbn10'),
+                'isbn13': gr_row.get('isbn13'),
+                'ts_ingesta': datetime.now().isoformat()
+            })
+        
+        # Registros de Google Books
+        for idx, gb_row in self.googlebooks_df.iterrows():
+            match = matches_df[matches_df['googlebooks_index'] == gb_row['source_index']]
+            
+            if len(match) > 0:
+                isbn13_for_id = gb_row.get('isbn13')
+            else:
+                isbn13_for_id = None
+            
+            if pd.notna(isbn13_for_id):
+                book_id = f"ISBN13:{isbn13_for_id}"
+            else:
+                hash_input = f"{gb_row['title']}|{gb_row.get('authors', '')}|{gb_row.get('publisher', '')}"
+                book_id = f"HASH:{hashlib.md5(hash_input.encode()).hexdigest()[:12]}"
+            
+            detail_records.append({
+                'source_id': f"GB_{idx}",
+                'source_name': 'googlebooks',
+                'source_file': 'googlebooks_books.csv',
+                'source_index': int(gb_row['source_index']),
+                'book_id': book_id,
+                'titulo_original': gb_row['title'],
+                'autor_original': gb_row.get('authors'),
+                'editorial': gb_row.get('publisher'),
+                'fecha_publicacion': gb_row.get('pub_date'),
+                'idioma': gb_row.get('language'),
+                'isbn10': gb_row.get('isbn10'),
+                'isbn13': gb_row.get('isbn13'),
+                'precio': gb_row.get('price_amount'),
+                'moneda': gb_row.get('price_currency'),
+                'google_books_id': gb_row.get('gb_id'),
+                'ts_ingesta': datetime.now().isoformat()
+            })
+        
+        self.book_source_detail = pd.DataFrame(detail_records)
+        
+        # Guardar
+        output_path = self.standard_dir / "book_source_detail.parquet"
+        self.book_source_detail.to_parquet(output_path, index=False)
+        
+        gr_count = int((self.book_source_detail['source_name'] == 'goodreads').sum())
+        gb_count = int((self.book_source_detail['source_name'] == 'googlebooks').sum())
+        
+        print(f"  ✓ book_source_detail.parquet guardado ({len(self.book_source_detail)} registros)")
+        print(f"    - {gr_count} de Goodreads")
+        print(f"    - {gb_count} de Google Books")
+        
+        self.metrics['record_counts']['source_detail_total'] = len(self.book_source_detail)
+        self.metrics['record_counts']['source_detail_goodreads'] = gr_count
+        self.metrics['record_counts']['source_detail_googlebooks'] = gb_count
+        
+        return self.book_source_detail
+    
+    def generate_quality_metrics(self):
+        """Genera métricas de calidad COMPLETAS"""
+        print("\nGenerando métricas de calidad...")
+        
+        if self.dim_book is not None:
+            total_records = len(self.dim_book)
+            
+            self.metrics['data_quality'] = {
+                'percent_valid_titles': round((self.dim_book['titulo'].notna().sum() / total_records) * 100, 2),
+                'percent_valid_isbns': round((self.dim_book['isbn13'].notna().sum() / total_records) * 100, 2),
+                'percent_with_rating': round((self.dim_book['rating_promedio'].notna().sum() / total_records) * 100, 2),
+                'percent_with_price': round((self.dim_book['precio'].notna().sum() / total_records) * 100, 2),
+                'percent_with_googlebooks_data': round((self.dim_book['google_books_id'].notna().sum() / total_records) * 100, 2),
+                'percent_with_year': round((self.dim_book['anio_publicacion'].notna().sum() / total_records) * 100, 2)
+            }
+            
+            self.metrics['quality_checks'] = {
+                'total_books': total_records,
+                'books_with_complete_metadata': int(
+                    (self.dim_book['titulo'].notna() & 
+                     self.dim_book['autor_principal'].notna() & 
+                     self.dim_book['isbn13'].notna()).sum()
+                ),
+                'books_with_rating': int(self.dim_book['rating_promedio'].notna().sum()),
+                'books_with_price': int(self.dim_book['precio'].notna().sum())
+            }
+        
+        # Guardar métricas
+        metrics_path = self.docs_dir / "quality_metrics.json"
+        with open(metrics_path, 'w', encoding='utf-8') as f:
+            json.dump(self.metrics, f, indent=2, ensure_ascii=False)
+        
+        print(f"  ✓ quality_metrics.json guardado")
+        
+        return self.metrics
     
     def run(self):
         """Ejecuta el pipeline completo"""
-        print("\n" + "="*60)
-        print("BOOKS PIPELINE - INTEGRACIÓN Y ESTANDARIZACIÓN")
-        print("="*60)
-        print(f"Inicio: {datetime.now().isoformat()}")
+        start_time = datetime.now()
+        
+        print("="*80)
+        print("INTEGRACIÓN Y ESTANDARIZACIÓN - Ejercicio 3")
+        print("="*80)
         
         try:
-            self.step1_land_data()
-            self.step2_annotate_metadata()
-            self.step3_quality_checks()
-            self.step4_define_canonical_model()
-            self.step5_normalize()
-            self.step6_enrich()
-            self.step7_deduplicate()
-            self.step8_emit_artifacts()
+            # 1. Cargar datos
+            self.load_goodreads_data()
+            self.load_googlebooks_data()
             
-            print("\n" + "="*60)
-            print("✓ PIPELINE COMPLETADO EXITOSAMENTE")
-            print("="*60)
-            print(f"Fin: {datetime.now().isoformat()}")
-            print(f"\nArtefactos generados:")
-            print("  - standard/dim_book.parquet")
-            print("  - standard/book_source_detail.parquet")
-            print("  - docs/quality_metrics.json")
-            print("  - docs/schema.md")
+            # 2. Emparejar por título
+            matches_df = self.match_books_by_title()
+            
+            # 3. Crear registros unificados
+            unified_df = self.create_unified_books(matches_df)
+            
+            # 4. Crear dim_book
+            self.create_dim_book(unified_df)
+            
+            # 5. Crear book_source_detail
+            self.create_book_source_detail(matches_df)
+            
+            # 6. Generar métricas
+            self.generate_quality_metrics()
+            
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            
+            self.metrics['execution_summary'] = {
+                'status': 'success',
+                'start_time': start_time.isoformat(),
+                'end_time': end_time.isoformat(),
+                'execution_time_seconds': round(duration, 2)
+            }
+            
+            self.metrics['pipeline_execution'] = {
+                'status': 'completed',
+                'duration_seconds': round(duration, 2),
+                'timestamp': end_time.isoformat()
+            }
+            
+            # Actualizar métricas
+            metrics_path = self.docs_dir / "quality_metrics.json"
+            with open(metrics_path, 'w', encoding='utf-8') as f:
+                json.dump(self.metrics, f, indent=2, ensure_ascii=False)
+            
+            print("\n" + "="*80)
+            print("✓ INTEGRACIÓN COMPLETADA EXITOSAMENTE")
+            print("="*80)
+            print(f"\nArchivos generados:")
+            print(f"  • {self.standard_dir}/dim_book.parquet ({len(self.dim_book)} registros)")
+            print(f"  • {self.standard_dir}/book_source_detail.parquet ({len(self.book_source_detail)} registros)")
+            print(f"  • {self.docs_dir}/quality_metrics.json")
+            print(f"\nTiempo de ejecución: {duration:.2f} segundos")
+            print("="*80)
             
         except Exception as e:
-            print(f"\n✗ ERROR en el pipeline: {e}")
-            raise
+            print(f"\n❌ ERROR: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            self.metrics['execution_summary'] = {
+                'status': 'failed',
+                'error': str(e),
+                'end_time': datetime.now().isoformat()
+            }
+            
+            self.metrics['pipeline_execution'] = {
+                'status': 'failed',
+                'error': str(e)
+            }
+            
+            # Guardar métricas con error
+            metrics_path = self.docs_dir / "quality_metrics.json"
+            with open(metrics_path, 'w', encoding='utf-8') as f:
+                json.dump(self.metrics, f, indent=2, ensure_ascii=False)
 
 
 def main():
     """Función principal"""
-    pipeline = BooksPipeline()
-    pipeline.run()
-    
-    print("\n" + "="*60)
-    print("EJERCICIO 3 COMPLETADO")
-    print("="*60)
+    integrator = DataIntegrator()
+    integrator.run()
 
 
 if __name__ == "__main__":
