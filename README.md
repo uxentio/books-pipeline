@@ -249,7 +249,7 @@ Reglas de supervivencia:
 ### 1. dim_book.parquet
 Tabla dimensional de libros (1 fila por libro único)
 - Formato: Apache Parquet
-- Campos: 18 columnas
+- Campos: 21 columnas
 - Clave primaria: book_id
 
 ### 2. book_source_detail.parquet
